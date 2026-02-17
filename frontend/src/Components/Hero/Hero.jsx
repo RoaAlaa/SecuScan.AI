@@ -7,7 +7,7 @@ export default function Hero() {
 
       <p className="text-gray-400 max-w-3xl mx-auto text-lg">
         Detect vulnerabilities in your web applications instantly using
-        advanced AI technology and integrated security tools.
+        advanced AI technology and expert cybersecurity analysis.
       </p>
     </section>
   )

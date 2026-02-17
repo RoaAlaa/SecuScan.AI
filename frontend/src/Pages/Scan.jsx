@@ -1,6 +1,12 @@
 import Navbar from "../Components/NavBar/Navbar";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
 
 export default function Scan() {
+  const [url, setUrl] = useState("");
+  const navigate = useNavigate();
+
   return (
     <>
       <Navbar/>
@@ -24,9 +30,12 @@ export default function Scan() {
             <input
               type="url"
               placeholder="https://example.com"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg
-                         px-4 py-3 focus:outline-none focus:border-blue-500"
+                        px-4 py-3 focus:outline-none focus:border-blue-500"
             />
+
           </div>
 
           <div className="mb-6">
@@ -44,11 +53,16 @@ export default function Scan() {
           </div>
           
           <button
+            onClick={() => {
+              if (!url) return;
+              navigate("/loading", { state: { url } });
+            }}
             className="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg
-                       font-semibold flex items-center justify-center gap-2 transition"
+                      font-semibold flex items-center justify-center gap-2 transition"
           >
             ▶ Run Scan
           </button>
+
 
         </div>
       </div>

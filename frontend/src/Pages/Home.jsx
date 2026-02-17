@@ -1,6 +1,7 @@
 import Features from "../Components/Features/Features";
 import Hero from "../Components/Hero/Hero";
 import Navbar from "../Components/NavBar/Navbar";
+import ReadyScan from "../Components/ReadyScan/ReadyScan";
 
 
 export default function Home() {
@@ -9,6 +10,7 @@ export default function Home() {
       <Navbar />
       <Hero />
       <Features />
+      <ReadyScan />
     </>
   )
 }

