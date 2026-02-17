@@ -2,8 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: radial-gradient(circle at top, #0b0935, #000000);
   color: white;
+  min-height: 100vh;
+  margin: 0;
+}
+
+#root {
   min-height: 100vh;
 }
