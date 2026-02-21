@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  scans     Scan[]
+}
+
+model Scan {
+  id          String   @id @default(uuid())
+  targetUrl   String
+  status      String   @default("pending")
+  reportUrl   String?
+  createdAt   DateTime @default(now())
+  finishedAt  DateTime?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  reports     Report[]
+}
+
+model Report {
+  id        String   @id @default(uuid())
+  scanId    String
+  type      String
+  severity  String
+  details   Json
+  createdAt DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id])
+}
+
+model ReportAccess {
+  id        String   @id @default(uuid())
+  scanId    String
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+}

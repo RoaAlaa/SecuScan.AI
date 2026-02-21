@@ -24,7 +24,8 @@ function App() {
           <Route path="scan" element={<Scan />} />
           <Route path="loading" element={<Loading />} />
           <Route path="results" element={<Results />} />
-          <Route path="report" element={<Report />} />
+          <Route path="report" element={<Navigate to="/" replace />} />
+          <Route path="report/:scanId" element={<Report />} />
           <Route
             path="history"
             element={

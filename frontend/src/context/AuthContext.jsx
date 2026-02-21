@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { api, getToken } from "../api/api";
 
 const AUTH_KEY = "secuscan_user";
 
@@ -10,12 +11,17 @@ export function AuthProvider({ children }) {
   const loadStoredUser = useCallback(() => {
     try {
       const raw = localStorage.getItem(AUTH_KEY);
-      if (raw) {
+      const token = getToken();
+      if (raw && token) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.email) setUser(parsed);
+      } else {
+        setUser(null);
       }
     } catch (_) {
       localStorage.removeItem(AUTH_KEY);
+      localStorage.removeItem("secuscan_token");
+      setUser(null);
     }
   }, []);
 
@@ -24,39 +30,24 @@ export function AuthProvider({ children }) {
   }, [loadStoredUser]);
 
   const login = useCallback(async (email, password) => {
-    const res = await fetch("http://localhost:3000/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || "Login failed");
-    }
-    if (data.user) {
-      setUser(data.user);
+    const data = await api("POST", "/api/auth/login", { email, password });
+    if (data.token && data.user) {
+      localStorage.setItem("secuscan_token", data.token);
       localStorage.setItem(AUTH_KEY, JSON.stringify(data.user));
+      setUser(data.user);
       return data.user;
     }
     throw new Error("Invalid response");
   }, []);
 
   const register = useCallback(async (name, email, password) => {
-    const res = await fetch("http://localhost:3000/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || "Registration failed");
-    }
-    return data;
+    await api("POST", "/api/auth/register", { name, email, password });
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem("secuscan_token");
   }, []);
 
   return (

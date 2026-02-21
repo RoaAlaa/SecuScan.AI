@@ -1,55 +1,32 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
+require("dotenv").config();
 
 const app = express();
-const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
+const prisma = require("./prismaClient");
 
-const users = new Map();
-
-app.post("/api/register", (req, res) => {
-  const { name, email, password } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
-  }
-  const normalizedEmail = String(email).trim().toLowerCase();
-  if (users.has(normalizedEmail)) {
-    return res.status(409).json({ error: "Email already registered" });
-  }
-  users.set(normalizedEmail, {
-    name: (name || "").trim() || "User",
-    email: normalizedEmail,
-    createdAt: new Date().toISOString(),
-  });
-  res.status(201).json({ success: true, message: "Registered. Please login." });
+app.get("/test-db", async (req, res) => {
+  const users = await prisma.user.findMany();
+  res.json(users);
 });
 
-app.post("/api/login", (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
-  }
-  const normalizedEmail = String(email).trim().toLowerCase();
-  const user = users.get(normalizedEmail);
-  if (!user) {
-    return res.status(401).json({ error: "Invalid email or password" });
-  }
-  res.json({ success: true, user: { name: user.name, email: user.email } });
+const authRoutes = require("./routes/authRoutes");
+const scanRoutes = require("./routes/scanRoutes");
+const reportRoutes = require("./routes/reportRoutes");
+
+app.use("/api/auth", authRoutes);
+app.use("/api/scans", scanRoutes);
+app.use("/api/report", reportRoutes);
+
+app.get("/", (req, res) => {
+  res.send("API Running...");
 });
 
-app.get("/api/report", (req, res) => {
-  fs.readFile("./report.json", "utf8", (err, data) => {
-    if (err) {
-      return res.status(500).json({ error: "Failed to load report" });
-    }
-
-    res.json(JSON.parse(data));
-  });
-});
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

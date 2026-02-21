@@ -14,7 +14,7 @@ export default function Register() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) navigate("/dashboard", { replace: true });
+    if (user) navigate("/", { replace: true });
   }, [user, navigate]);
 
   const handleSubmit = async (e) => {
