@@ -7,20 +7,47 @@ const { getEmbedding, findSimilarChunks } = require("./vectorUtils");
 
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
 const CHAT_MODEL = process.env.CHAT_MODEL || "llama3.2";
-const RETRIEVAL_LIMIT = parseInt(process.env.RAG_RETRIEVAL_LIMIT || "5", 10);
+const RETRIEVAL_LIMIT = parseInt(process.env.RAG_RETRIEVAL_LIMIT || "3", 10);
 
-const SYSTEM_PROMPT = `You are a Security Analyst Assistant and Vulnerability Explainer for SecuScan.
+// Similarity threshold (0-1). Chunks below this are excluded. Omit or invalid = no threshold.
+function parseSimilarityThreshold() {
+  const val = process.env.RAG_SIMILARITY_THRESHOLD;
+  if (val === undefined || val === "") return null;
+  const num = parseFloat(val);
+  return Number.isFinite(num) && num >= 0 && num <= 1 ? num : null;
+}
+const SIMILARITY_THRESHOLD = parseSimilarityThreshold();
 
-Rules:
-- Use ONLY the provided context from the knowledge base. Do not add information from outside the context (no hallucinations).
-- Be concise, factual, and technical. No vague generalizations.
-- If the context does not contain enough information to answer, say exactly that and do not guess.
-- If different context chunks conflict, summarize both views and clearly indicate that the information conflicts.`;
+const SYSTEM_PROMPT = `You are a Security Analyst Assistant.
 
-const OUTPUT_FORMAT_INSTRUCTION = `Format your response as:
-- **Name**: (vulnerability or topic name)
-- **Description**: (factual, technical description from context only)
-- **Source**: (document name from context, e.g. sql_injection.md)`;
+You are only allowed to answer questions about the following cybersecurity vulnerabilities:
+- SQL Injection (SQLi)
+- Cross-Site Scripting (XSS)
+- Remote File Inclusion (RFI)
+- Local File Inclusion (LFI)
+
+Behavior rules:
+
+1) If the user question is about one of these four vulnerabilities AND the retrieved context is relevant:
+   - Use only the relevant context.
+   - Explain clearly, professionally, and in your own words.
+   - Keep examples simple and human-friendly.
+
+2) If the user question is about one of these four vulnerabilities BUT the context does not have the answer:
+   - Respond briefly:
+     "This information is not available in the current knowledge base."
+   - Suggest clarification or a more specific question.
+
+3) If the user question is NOT about these four vulnerabilities:
+   - Ignore the context completely.
+   - Respond briefly (1–2 sentences).
+   - Guide the user to ask about SQLi, XSS, RFI, or LFI.
+
+STRICT RULES:
+- Do NOT explain your reasoning.
+- Do NOT mention context or sources.
+- Do NOT answer questions outside these four vulnerabilities.
+- Do NOT hallucinate information.`;
 
 /** Used when question is general/greeting/casual (non-RAG path via n8n/Gemini classifier). */
 const GENERAL_SYSTEM_PROMPT = `You are a Security Assistant.
@@ -34,20 +61,23 @@ const GENERAL_SYSTEM_PROMPT = `You are a Security Assistant.
 
 /**
  * Build the prompt with retrieved context for Ollama.
- * Each chunk is labeled with its source so the model can cite it.
+ * Uses the RAG prompt format: Context + User Message + Answer.
  */
 function buildPrompt(userQuery, contextChunks) {
   const contextBlocks = contextChunks.map((c) => {
     const source = c.metadata?.source || "knowledge base";
     return `[Source: ${source}]\n${c.content}`;
   });
-  const contextText = contextBlocks.join("\n\n---\n\n").trim();
+  const retrievedContext = contextBlocks.join("\n\n---\n\n").trim();
 
-  const userPrompt = contextText
-    ? `Context (use ONLY this):\n\n${contextText}\n\n---\n\nQuestion: ${userQuery}\n\n${OUTPUT_FORMAT_INSTRUCTION}`
-    : `Question: ${userQuery}\n\nNo relevant context found. Reply briefly that you cannot answer from the knowledge base.`;
+  return `Context:
+${retrievedContext || "(No relevant context found.)"}
 
-  return userPrompt;
+User Message:
+${userQuery}
+
+Answer:
+`;
 }
 
 /**
@@ -87,11 +117,13 @@ async function chatWithKnowledge(userQuery, options = {}) {
   }
 
   const limit = options.limit ?? RETRIEVAL_LIMIT;
+  const minSimilarity = options.minSimilarity ?? SIMILARITY_THRESHOLD;
 
   const embedding = await getEmbedding(userQuery.trim());
   const chunks = await findSimilarChunks(embedding, {
     sourceType: "knowledge",
     limit,
+    ...(minSimilarity != null && { minSimilarity }),
   });
 
   const prompt = buildPrompt(userQuery.trim(), chunks);
