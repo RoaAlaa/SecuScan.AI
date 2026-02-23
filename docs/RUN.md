@@ -11,7 +11,6 @@ Ensure you have:
 1. **PostgreSQL + pgvector** – See [SETUP_DATABASE.md](./SETUP_DATABASE.md)
 2. **Node.js** (v18+)
 3. **Ollama** – [ollama.ai](https://ollama.ai)
-4. **n8n + Gemini** (optional) – For chat routing: RAG vs general LLM. See [N8N_CLASSIFIER.md](./N8N_CLASSIFIER.md)
 
 ---
 
@@ -95,17 +94,6 @@ Frontend runs at **http://localhost:5173**
 | Ollama      | `ollama serve`             | http://localhost:11434 |
 | Backend     | `cd backend && npm run dev` | http://localhost:5000  |
 | Frontend    | `cd frontend && npm run dev` | http://localhost:5173  |
-
----
-
-## Optional: n8n classifier for chat routing
-
-To route chat by RAG vs general LLM (Gemini classifies):
-
-1. Create n8n workflow with webhook + Gemini as in [N8N_CLASSIFIER.md](./N8N_CLASSIFIER.md).
-2. Set env var in backend: `N8N_CLASSIFIER_WEBHOOK_URL=http://localhost:5678/webhook/classify` (or your n8n URL)
-
-If not set, all messages go to RAG (default).
 
 ---
 

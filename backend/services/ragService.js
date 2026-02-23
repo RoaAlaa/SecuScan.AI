@@ -49,16 +49,6 @@ STRICT RULES:
 - Do NOT answer questions outside these four vulnerabilities.
 - Do NOT hallucinate information.`;
 
-/** Used when question is general/greeting/casual (non-RAG path via n8n/Gemini classifier). */
-const GENERAL_SYSTEM_PROMPT = `You are a Security Assistant.
-- Only answer general questions, greetings, or casual conversation briefly and concisely (1–2 sentences).
-- Do NOT explain anything in detail.
-- Always remind the user: "I am your Security Assistant and I'm here to help regarding any security-related questions."
-- Never answer technical vulnerability questions (those will go to RAG).
-- Example responses:
-  Q: "Hi" → "Hi! I'm your Security Assistant and I'm here to help regarding any security-related questions."
-  Q: "How are you?" → "I'm fine! I'm your Security Assistant here to help with any security-related questions."`;
-
 /**
  * Build the prompt with retrieved context for Ollama.
  * Uses the RAG prompt format: Context + User Message + Answer.
@@ -140,21 +130,8 @@ async function chatWithKnowledge(userQuery, options = {}) {
   };
 }
 
-/**
- * LLM-only path (no RAG): for general questions, greetings, casual chat.
- * Uses GENERAL_SYSTEM_PROMPT to keep responses brief and redirect to security topics.
- */
-async function chatWithLLM(userQuery) {
-  if (!userQuery || typeof userQuery !== "string" || !userQuery.trim()) {
-    throw new Error("Query is required");
-  }
-  const answer = await generateWithOllama(userQuery.trim(), GENERAL_SYSTEM_PROMPT);
-  return { answer, chunks: [] };
-}
-
 module.exports = {
   chatWithKnowledge,
-  chatWithLLM,
   buildPrompt,
   generateWithOllama,
 };

@@ -1,10 +1,9 @@
-const { chatWithKnowledge, chatWithLLM } = require("../services/ragService");
-const { classifyQuestion } = require("../services/classifierService");
+const { chatWithKnowledge } = require("../services/ragService");
 
 /**
  * POST /api/chat
  * Body: { message: string }
- * Classifies via n8n/Gemini → RAG (knowledge) or LLM (general). Returns answer + sources.
+ * RAG chatbot: retrieves knowledge chunks and generates answer via Ollama.
  */
 exports.chat = async (req, res) => {
   try {
@@ -14,14 +13,11 @@ exports.chat = async (req, res) => {
       return res.status(400).json({ error: "message is required" });
     }
 
-    const mode = await classifyQuestion(message.trim());
-
-    const { answer, chunks } =
-      mode === "LLM" ? await chatWithLLM(message.trim()) : await chatWithKnowledge(message.trim());
+    const { answer, chunks } = await chatWithKnowledge(message.trim());
 
     res.json({
       answer,
-      mode: mode.toLowerCase(),
+      mode: "rag",
       sources: chunks.map((c) => ({
         id: c.id,
         preview: c.content.substring(0, 150) + (c.content.length > 150 ? "..." : ""),

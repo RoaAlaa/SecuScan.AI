@@ -110,18 +110,18 @@ Access logic:
 - Else if `?token=` present and matches ReportAccess and not expired → allow.
 - Else → 403.
 
-### 4.4 Chat (RAG + LLM routing)
+### 4.4 Chat (RAG)
 
 | Method | Endpoint | Auth | Body | Response | Why |
 |--------|----------|------|------|----------|-----|
-| POST | `/api/chat` | No | `{ message: string }` | `200 { answer, mode, sources }` or `400/503 { error }` | Chat routes via n8n/Gemini: RAG (knowledge) or LLM (general). No auth required. |
+| POST | `/api/chat` | No | `{ message: string }` | `200 { answer, mode, sources }` or `400/503 { error }` | RAG chatbot: retrieves knowledge chunks, generates answer via Ollama. No auth required. |
 
-**Request:** `{ "message": "How do I prevent SQL injection?" }` or `{ "message": "Hi" }`
+**Request:** `{ "message": "How do I prevent SQL injection?" }`
 
-**Response (RAG):**
+**Response:**
 ```json
 {
-  "answer": "**Name**: SQL Injection\n\n**Description**: ...\n\n**Source**: sql_injection.md",
+  "answer": "...",
   "mode": "rag",
   "sources": [
     { "id": "...", "preview": "...", "similarity": 0.85, "source": "sql_injection.md" }
@@ -129,27 +129,14 @@ Access logic:
 }
 ```
 
-**Response (LLM – general/greeting):**
-```json
-{
-  "answer": "Hi! I'm your Security Assistant and I'm here to help regarding any security-related questions.",
-  "mode": "llm",
-  "sources": []
-}
-```
-
 **Errors:** `400 { "error": "message is required" }` | `503 { "error": "AI service unavailable..." }`
 
 **Chat flow:**
 ```
-User types message → Frontend POST /api/chat { message } → Backend calls n8n webhook (Gemini classifies)
-→ Backend gets { mode: "RAG" | "LLM" }
-→ If RAG: embed query → findSimilarChunks → build prompt with context → Ollama generate
-→ If LLM: Ollama generate with general-assistant prompt (1–2 sentences, redirect to security)
-→ return { answer, mode, sources } → Frontend displays in chat UI
+User types message → Frontend POST /api/chat { message }
+→ Backend: embed query → findSimilarChunks → build prompt with context → Ollama generate
+→ return { answer, mode: "rag", sources } → Frontend displays in chat UI
 ```
-
-See [N8N_CLASSIFIER.md](./N8N_CLASSIFIER.md) for the n8n webhook contract. If `N8N_CLASSIFIER_WEBHOOK_URL` is not set, all messages go to RAG.
 
 ---
 
