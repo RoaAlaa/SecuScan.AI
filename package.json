@@ -1,0 +1,14 @@
+{
+  "name": "secuscan-ai",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"cd backend && npm run dev\" \"cd frontend && npm run dev\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "ingest:knowledge": "cd backend && npm run ingest:knowledge",
+    "migrate": "cd backend && npx prisma migrate dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

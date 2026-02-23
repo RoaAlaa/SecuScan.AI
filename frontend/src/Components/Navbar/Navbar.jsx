@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, LogOut, History } from "lucide-react";
+import { ShieldCheck, LogOut, History, MessageCircle } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Navbar() {
@@ -30,6 +30,10 @@ export default function Navbar() {
               <History size={14} className="shrink-0" />
               History
             </Link>
+            <Link to="/chat" className="text-sm text-gray-300 hover:text-white py-2 px-2 transition flex items-center gap-1">
+              <MessageCircle size={14} className="shrink-0" />
+              Chat
+            </Link>
             <button
               type="button"
               onClick={handleLogout}
@@ -43,6 +47,10 @@ export default function Navbar() {
           <>
             <Link to="/" className="text-sm text-gray-300 hover:text-white py-2 px-2 transition">
               Home
+            </Link>
+            <Link to="/chat" className="text-sm text-gray-300 hover:text-white py-2 px-2 transition flex items-center gap-1">
+              <MessageCircle size={14} className="shrink-0" />
+              Chat
             </Link>
             <Link to="/login" className="text-sm text-gray-300 hover:text-white py-2 px-2 transition">
               Login

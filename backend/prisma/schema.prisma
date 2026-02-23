@@ -26,6 +26,8 @@ model Scan {
   userId      String?
   user        User?    @relation(fields: [userId], references: [id])
   reports     Report[]
+  documentChunks DocumentChunk[]
+
 }
 
 model Report {
@@ -34,9 +36,8 @@ model Report {
   type      String
   severity  String
   details   Json
-  createdAt DateTime @default(now())
-
-  scan Scan @relation(fields: [scanId], references: [id])
+  createdAt DateTime @default(now())  scan           Scan           @relation(fields: [scanId], references: [id])
+  documentChunks DocumentChunk[]
 }
 
 model ReportAccess {
@@ -45,4 +46,26 @@ model ReportAccess {
   email     String
   token     String   @unique
   expiresAt DateTime
+}
+
+
+
+model DocumentChunk {
+  id         String   @id @default(uuid())
+  content    String   @db.Text
+  embedding  Unsupported("vector")?
+  sourceType String   // "knowledge" or "report" - NEEDED for access control
+  reportId   String?
+  scanId     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  
+  // Optional: relations for type safety
+  report     Report?  @relation(fields: [reportId], references: [id])
+  scan       Scan?    @relation(fields: [scanId], references: [id])
+
+  @@index([sourceType])
+  @@index([scanId])
+  @@index([reportId])
+  @@index([createdAt])
 }

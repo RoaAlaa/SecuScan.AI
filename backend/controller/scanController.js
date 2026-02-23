@@ -1,9 +1,8 @@
-const prisma = require("../prismaClient");
-const crypto = require("crypto");
-
-function generateToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
+const {
+  createScan,
+  listUserScans,
+  listPendingScans,
+} = require("../services/scanService");
 
 exports.startScan = async (req, res) => {
   try {
@@ -20,32 +19,11 @@ exports.startScan = async (req, res) => {
       return res.status(400).json({ error: "Email is required for guest scans" });
     }
 
-    const scan = await prisma.scan.create({
-      data: {
-        targetUrl: url,
-        status: "pending",
-        userId: userId || null,
-      },
+    const { scan, accessToken, reportWillBeSentTo } = await createScan({
+      targetUrl: url,
+      userId,
+      email: !userId && email ? email.trim() : null,
     });
-
-    let reportWillBeSentTo = null;
-    let accessToken = null;
-
-    if (!userId) {
-      const token = generateToken();
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-      await prisma.reportAccess.create({
-        data: {
-          scanId: scan.id,
-          email: email.trim().toLowerCase(),
-          token,
-          expiresAt,
-        },
-      });
-      reportWillBeSentTo = email.trim();
-      accessToken = token;
-    }
 
     res.status(201).json({
       scanId: scan.id,
@@ -64,11 +42,7 @@ exports.startScan = async (req, res) => {
 exports.getMyScans = async (req, res) => {
   try {
     const userId = req.userId;
-    const scans = await prisma.scan.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      include: { reports: true },
-    });
+    const scans = await listUserScans(userId);
     res.json(scans);
   } catch (err) {
     console.error(err);
@@ -79,10 +53,7 @@ exports.getMyScans = async (req, res) => {
 exports.getPendingScans = async (req, res) => {
   try {
     const userId = req.userId;
-    const scans = await prisma.scan.findMany({
-      where: { userId, status: "pending" },
-      orderBy: { createdAt: "desc" },
-    });
+    const scans = await listPendingScans(userId);
     res.json(scans);
   } catch (err) {
     console.error(err);

@@ -16,10 +16,12 @@ app.get("/test-db", async (req, res) => {
 const authRoutes = require("./routes/authRoutes");
 const scanRoutes = require("./routes/scanRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/scans", scanRoutes);
 app.use("/api/report", reportRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/", (req, res) => {
   res.send("API Running...");

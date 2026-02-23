@@ -12,6 +12,7 @@ import Results from "./Pages/Results";
 import Report from "./Pages/Report";
 import Dashboard from "./Pages/Dashboard";
 import History from "./Pages/History";
+import Chat from "./Pages/Chat";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
           <Route path="results" element={<Results />} />
           <Route path="report" element={<Navigate to="/" replace />} />
           <Route path="report/:scanId" element={<Report />} />
+          <Route path="chat" element={<Chat />} />
           <Route
             path="history"
             element={

@@ -4,7 +4,6 @@ import { useAuth } from "../context/AuthContext";
 import {
   ScanSearch,
   FileText,
-  History,
   Zap,
   Brain,
   FileOutput,
@@ -104,13 +103,13 @@ export default function Dashboard() {
             </p>
           </Link>
           <Link
-            to="/history"
+            to="/chat"
             className="bg-slate-900/70 border border-slate-700 rounded-xl p-6 text-left hover:border-blue-500/60 transition block"
           >
-            <History className="text-blue-400 mb-3" size={28} strokeWidth={1.5} />
-            <h3 className="text-base font-semibold text-white mb-1">History</h3>
+            <BotMessageSquare className="text-blue-400 mb-3" size={28} strokeWidth={1.5} />
+            <h3 className="text-base font-semibold text-white mb-1">Vulnerability Chat</h3>
             <p className="text-gray-400 text-xs leading-relaxed">
-              Browse past scan results and reports.
+              Ask about SQL injection, XSS, LFI, RFI and more.
             </p>
           </Link>
         </div>
