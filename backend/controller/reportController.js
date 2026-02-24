@@ -8,9 +8,24 @@ const { getReportForScan } = require("../services/reportService");
  */
 exports.saveReport = async (req, res) => {
   try {
-    const { scanId, type, severity, details } = req.body;
+    const body = req.body || {};
+    let { scanId, type, severity, details } = body;
 
-    if (!scanId || !details || typeof details !== "object") {
+    if (!scanId) {
+      return res.status(400).json({
+        error: "scanId and details (object) are required",
+      });
+    }
+
+    if (typeof details === "string") {
+      try {
+        details = JSON.parse(details);
+      } catch (_) {
+        return res.status(400).json({ error: "details must be valid JSON" });
+      }
+    }
+
+    if (!details || typeof details !== "object" || Array.isArray(details)) {
       return res.status(400).json({
         error: "scanId and details (object) are required",
       });
@@ -30,6 +45,11 @@ exports.saveReport = async (req, res) => {
         severity: severity || "unknown",
         details,
       },
+    });
+
+    await prisma.scan.update({
+      where: { id: scanId },
+      data: { status: "completed", finishedAt: new Date() },
     });
 
     const chunkCount = await ingestReportForScan({

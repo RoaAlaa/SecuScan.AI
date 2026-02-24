@@ -1,11 +1,28 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+require("dotenv").config({ path: require("path").join(__dirname, ".env") });
 
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(
+  express.json({
+    limit: "2mb",
+    type: ["application/json", "application/*+json", "json"],
+  })
+);
+app.use(express.urlencoded({ extended: true }));
+
+// Handle invalid JSON bodies with a clear 400
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    return res.status(400).json({
+      error:
+        "Invalid JSON body. Send Content-Type: application/json and a valid JSON payload.",
+    });
+  }
+  return next(err);
+});
 const prisma = require("./prismaClient");
 
 app.get("/test-db", async (req, res) => {

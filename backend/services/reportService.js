@@ -24,7 +24,7 @@ async function getReportForScan({ scanId, userId, token }) {
 
   const scan = await prisma.scan.findUnique({
     where: { id: scanId },
-    include: { reports: true },
+    include: { reports: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
 
   if (!scan) {
@@ -54,11 +54,47 @@ async function getReportForScan({ scanId, userId, token }) {
 
   if (scan.reports && scan.reports.length > 0) {
     const report = scan.reports[0];
-    return {
-      ...report.details,
+    let base = report.details && typeof report.details === "object" && !Array.isArray(report.details)
+      ? report.details
+      : {};
+
+    const normalized = {
+      ...base,
       type: report.type,
       severity: report.severity,
     };
+
+    // If there is no vulnerabilities array but the details look like a single finding,
+    // wrap it into vulnerabilities[0] so the frontend can render cards.
+    if (!Array.isArray(normalized.vulnerabilities)) {
+      const single = {
+        type: base.type || report.type,
+        url: base.url,
+        method: base.method,
+        parameter: base.parameter,
+        dbms: base.dbms,
+        injection_techniques: base.injection_techniques,
+        successful_payloads: base.successful_payloads,
+        evidence: base.evidence,
+        severity: (base.severity || report.severity || "").toUpperCase() || undefined,
+      };
+
+      const hasContent =
+        single.type ||
+        single.url ||
+        single.method ||
+        single.parameter ||
+        single.dbms ||
+        (Array.isArray(single.injection_techniques) && single.injection_techniques.length > 0) ||
+        (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
+        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0);
+
+      if (hasContent) {
+        normalized.vulnerabilities = [single];
+      }
+    }
+
+    return normalized;
   }
 
   const sample = getSampleReport();

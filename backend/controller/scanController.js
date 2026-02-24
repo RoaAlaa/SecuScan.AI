@@ -3,6 +3,7 @@ const {
   listUserScans,
   listPendingScans,
 } = require("../services/scanService");
+const { triggerScanWorkflow } = require("../services/n8nService");
 
 exports.startScan = async (req, res) => {
   try {
@@ -24,6 +25,12 @@ exports.startScan = async (req, res) => {
       userId,
       email: !userId && email ? email.trim() : null,
     });
+
+    triggerScanWorkflow({
+      scanId: scan.id,
+      targetUrl: url,
+      email: !userId && email ? email.trim() : null,
+    }).catch(() => {});
 
     res.status(201).json({
       scanId: scan.id,
