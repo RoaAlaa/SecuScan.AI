@@ -1,10 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector")]
 }
 
 model User {
@@ -36,7 +38,10 @@ model Report {
   type      String
   severity  String
   details   Json
-  createdAt DateTime @default(now())  scan           Scan           @relation(fields: [scanId], references: [id])
+  createdAt DateTime @default(now())
+
+  scan Scan @relation(fields: [scanId], references: [id])
+
   documentChunks DocumentChunk[]
 }
 

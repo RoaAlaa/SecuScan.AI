@@ -3,12 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-"scripts": {
+  "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
     "start": "node server.js",
     "ingest:knowledge": "node --max-old-space-size=4096 scripts/ingestKnowledge.js"
-},
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -20,7 +20,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "nodemailer": "^8.0.1"
+    "nodemailer": "^8.0.1",
+    "pgvector": "^0.2.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",
