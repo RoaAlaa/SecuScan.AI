@@ -132,7 +132,7 @@ export default function Report() {
                   </div>
                 )}
                 {v.successful_payloads?.length > 0 && (
-                  <div>
+                  <div className="mb-3">
                     <p className="text-gray-500 text-xs mb-1">Successful payloads</p>
                     <div className="space-y-1">
                       {v.successful_payloads.map((p, i) => (
@@ -144,6 +144,26 @@ export default function Report() {
                         </pre>
                       ))}
                     </div>
+                  </div>
+                )}
+                {v.impact?.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Impact</p>
+                    <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
+                      {v.impact.map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {v.remediation?.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Remediation</p>
+                    <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
+                      {v.remediation.map((item, i) => (
+                        <li key={i}>{item}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
                 {v.evidence && (

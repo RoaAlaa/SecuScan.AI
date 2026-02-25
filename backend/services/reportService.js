@@ -34,13 +34,16 @@ async function getReportForScan({ scanId, userId, token }) {
   }
 
   let allowed = false;
+
   if (userId && scan.userId === userId) {
     allowed = true;
   }
+
   if (!allowed && token) {
     const access = await prisma.reportAccess.findFirst({
       where: { scanId, token },
     });
+
     if (access && new Date() < access.expiresAt) {
       allowed = true;
     }
@@ -54,9 +57,13 @@ async function getReportForScan({ scanId, userId, token }) {
 
   if (scan.reports && scan.reports.length > 0) {
     const report = scan.reports[0];
-    let base = report.details && typeof report.details === "object" && !Array.isArray(report.details)
-      ? report.details
-      : {};
+
+    const base =
+      report.details &&
+      typeof report.details === "object" &&
+      !Array.isArray(report.details)
+        ? report.details
+        : {};
 
     const normalized = {
       ...base,
@@ -64,8 +71,7 @@ async function getReportForScan({ scanId, userId, token }) {
       severity: report.severity,
     };
 
-    // If there is no vulnerabilities array but the details look like a single finding,
-    // wrap it into vulnerabilities[0] so the frontend can render cards.
+    // If no vulnerabilities array exists, wrap single finding
     if (!Array.isArray(normalized.vulnerabilities)) {
       const single = {
         type: base.type || report.type,
@@ -73,10 +79,23 @@ async function getReportForScan({ scanId, userId, token }) {
         method: base.method,
         parameter: base.parameter,
         dbms: base.dbms,
-        injection_techniques: base.injection_techniques,
-        successful_payloads: base.successful_payloads,
+        injection_techniques: Array.isArray(base.injection_techniques)
+          ? base.injection_techniques
+          : undefined,
+        successful_payloads: Array.isArray(base.successful_payloads)
+          ? base.successful_payloads
+          : undefined,
+
+        // ✅ NEW FIELDS
+        impact: Array.isArray(base.impact) ? base.impact : undefined,
+        remediation: Array.isArray(base.remediation)
+          ? base.remediation
+          : undefined,
+
         evidence: base.evidence,
-        severity: (base.severity || report.severity || "").toUpperCase() || undefined,
+        severity:
+          (base.severity || report.severity || "").toUpperCase() ||
+          undefined,
       };
 
       const hasContent =
@@ -85,9 +104,16 @@ async function getReportForScan({ scanId, userId, token }) {
         single.method ||
         single.parameter ||
         single.dbms ||
-        (Array.isArray(single.injection_techniques) && single.injection_techniques.length > 0) ||
-        (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
-        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0);
+        (Array.isArray(single.injection_techniques) &&
+          single.injection_techniques.length > 0) ||
+        (Array.isArray(single.successful_payloads) &&
+          single.successful_payloads.length > 0) ||
+        (Array.isArray(single.impact) && single.impact.length > 0) ||
+        (Array.isArray(single.remediation) &&
+          single.remediation.length > 0) ||
+        (single.evidence &&
+          typeof single.evidence === "object" &&
+          Object.keys(single.evidence).length > 0);
 
       if (hasContent) {
         normalized.vulnerabilities = [single];
@@ -110,4 +136,3 @@ async function getReportForScan({ scanId, userId, token }) {
 module.exports = {
   getReportForScan,
 };
-
