@@ -61,17 +61,16 @@ export default function Report() {
     );
   }
 
-  const sev = (report.severity || "").toLowerCase()
-    sev === "critical"
-      ? "bg-red-500/20 text-red-400 border-red-500/50"
-      : sev === "high"
-        ? "bg-orange-500/20 text-orange-400 border-orange-500/50"
-        : sev === "unknown" || !report.severity
-          ? "bg-slate-500/20 text-slate-400 border-slate-500/50"
-          : "bg-amber-500/20 text-amber-400 border-amber-500/50";
-
   const vulns = report.vulnerabilities || [];
   const isVulnerabilitiesFormat = vulns.length > 0;
+  const severityClass =
+    (report.severity || "").toLowerCase() === "critical"
+      ? "bg-red-500/20 text-red-400 border-red-500/50"
+      : (report.severity || "").toLowerCase() === "high"
+        ? "bg-orange-500/20 text-orange-400 border-orange-500/50"
+        : (report.severity || "").toLowerCase() === "unknown" || !report.severity
+          ? "bg-slate-500/20 text-slate-400 border-slate-500/50"
+          : "bg-amber-500/20 text-amber-400 border-amber-500/50";
   const hasSummary = typeof report.summary === "string" && report.summary.trim().length > 0;
   const hasLegacyFormat =
     !!report.scan_info ||
@@ -93,7 +92,12 @@ export default function Report() {
         <h1 className="text-xl font-bold text-white mb-2">Vulnerability Assessment Report</h1>
         <p className="text-xs text-gray-400 mb-4">Confidential — Findings and remediation guidance</p>
         <div className="flex flex-wrap items-center gap-3">
-
+          {isVulnerabilitiesFormat && (report.type || report.severity) && (
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${severityClass}`}>
+              <AlertTriangle size={12} />
+              {report.type || "Vulnerability"} — {report.severity || "N/A"}
+            </span>
+          )}
           {report.scan_status && (
             <span className="px-2.5 py-1 rounded border text-xs font-medium border-slate-600 text-gray-400">
               {report.scan_status}
@@ -111,45 +115,30 @@ export default function Report() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm font-semibold text-white">{v.type || "Vulnerability"}</span>
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    (v.severity || "").toUpperCase() === "HIGH" ? "bg-red-500/20 text-red-400" :
+                    (v.severity || "").toUpperCase() === "HIGH" || (v.severity || "").toUpperCase() === "CRITICAL" ? "bg-red-500/20 text-red-400" :
                     (v.severity || "").toUpperCase() === "MEDIUM" ? "bg-orange-500/20 text-orange-400" :
                     "bg-amber-500/20 text-amber-400"
                   }`}>{v.severity || "—"}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                  <div><span className="text-gray-500">URL</span><p className="text-gray-300 break-all font-mono">{v.url ?? "—"}</p></div>
-                  <div><span className="text-gray-500">Method</span><p className="text-gray-300 font-mono">{v.method ?? "—"}</p></div>
-                  <div><span className="text-gray-500">Parameter</span><p className="text-gray-300">{v.parameter ?? "—"}</p></div>
-                  <div><span className="text-gray-500">DBMS</span><p className="text-gray-300">{v.dbms ?? "—"}</p></div>
+                {v.summary && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Summary</p>
+                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.summary}</p>
+                  </div>
+                )}
+                <div className="mb-3">
+                  <p className="text-gray-500 text-xs mb-1">Location</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-gray-500">URL</span><p className="text-gray-300 break-all font-mono">{v.url ?? "—"}</p></div>
+                    <div><span className="text-gray-500">Method</span><p className="text-gray-300 font-mono">{v.method ?? "—"}</p></div>
+                    <div><span className="text-gray-500">Parameter</span><p className="text-gray-300">{v.parameter ?? "—"}</p></div>
+                  </div>
                 </div>
-                {v.injection_techniques?.length > 0 && (
+                {(v.business_impact?.length > 0 || v.impact?.length > 0) && (
                   <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Injection techniques</p>
+                    <p className="text-gray-500 text-xs mb-1">Business impact</p>
                     <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
-                      {v.injection_techniques.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {v.successful_payloads?.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Successful payloads</p>
-                    <div className="space-y-1">
-                      {v.successful_payloads.map((p, i) => (
-                        <pre
-                          key={i}
-                          className="bg-slate-950 rounded p-2 text-gray-400 text-xs whitespace-pre-wrap break-all"
-                        >
-                          {p}
-                        </pre>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {v.impact?.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Impact</p>
-                    <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
-                      {v.impact.map((item, i) => (
+                      {(v.business_impact || v.impact || []).map((item, i) => (
                         <li key={i}>{item}</li>
                       ))}
                     </ul>
@@ -165,7 +154,38 @@ export default function Report() {
                     </ul>
                   </div>
                 )}
-                {v.evidence && (
+                {(v.dbms || v.injection_techniques?.length > 0 || v.successful_payloads?.length > 0) && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Technical evidence</p>
+                    <div className="space-y-2 text-xs">
+                      {v.dbms && <p><span className="text-gray-500">DBMS:</span> <span className="text-gray-300">{v.dbms}</span></p>}
+                      {v.injection_techniques?.length > 0 && (
+                        <div>
+                          <p className="text-gray-500 mb-0.5">Injection techniques</p>
+                          <ul className="list-disc ml-4 text-gray-300 space-y-0.5">
+                            {v.injection_techniques.map((t, i) => <li key={i}>{t}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {v.successful_payloads?.length > 0 && (
+                        <div>
+                          <p className="text-gray-500 mb-0.5">Successful payloads</p>
+                          <div className="space-y-1">
+                            {v.successful_payloads.map((p, i) => (
+                              <pre
+                                key={i}
+                                className="bg-slate-950 rounded p-2 text-gray-400 text-xs whitespace-pre-wrap break-all"
+                              >
+                                {p}
+                              </pre>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {v.evidence && typeof v.evidence === "object" && (
                   <p className="text-xs text-gray-500 mt-2">
                     {v.evidence.sqlmap_confirmed && "SQLMap confirmed. "}
                     {v.evidence.sql_error_detected && "SQL error detected."}

@@ -30,8 +30,30 @@ function reportToText(details, type = "", severity = "") {
     }
     if (details.vulnerabilities && Array.isArray(details.vulnerabilities)) {
       details.vulnerabilities.forEach((v, i) => {
-        const block = typeof v === "string" ? v : JSON.stringify(v, null, 0);
-        parts.push(`Vulnerability ${i + 1}: ${block}`);
+        if (typeof v === "string") {
+          parts.push(`Vulnerability ${i + 1}: ${v}`);
+          return;
+        }
+        // New n8n shape: summary, location, business_impact, remediation, technical_evidence
+        const lines = [];
+        if (v.type) lines.push(`Type: ${v.type}`);
+        if (v.severity) lines.push(`Severity: ${v.severity}`);
+        if (v.summary) lines.push(`Summary: ${v.summary}`);
+        const loc = v.location || {};
+        if (loc.url || loc.method || loc.parameter) {
+          lines.push(`Location: ${loc.url || ""} | ${loc.method || ""} | ${loc.parameter || ""}`);
+        }
+        if (v.business_impact?.length) lines.push(`Business impact: ${v.business_impact.join("; ")}`);
+        if (v.remediation?.length) lines.push(`Remediation: ${v.remediation.join("; ")}`);
+        const te = v.technical_evidence || {};
+        if (te.dbms) lines.push(`DBMS: ${te.dbms}`);
+        if (te.injection_techniques?.length) lines.push(`Injection techniques: ${te.injection_techniques.join(", ")}`);
+        if (te.successful_payloads?.length) lines.push(`Payloads: ${te.successful_payloads.join(" | ")}`);
+        if (lines.length > 0) {
+          parts.push(`Vulnerability ${i + 1}:\n${lines.join("\n")}`);
+        } else {
+          parts.push(`Vulnerability ${i + 1}: ${JSON.stringify(v, null, 0)}`);
+        }
       });
     }
     // Fallback: flatten object into lines

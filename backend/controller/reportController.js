@@ -52,18 +52,25 @@ exports.saveReport = async (req, res) => {
       data: { status: "completed", finishedAt: new Date() },
     });
 
-    const chunkCount = await ingestReportForScan({
-      scanId,
-      reportId: report.id,
-      type: report.type,
-      severity: report.severity,
-      details: report.details,
-    });
+    let chunkCount = 0;
+    try {
+      chunkCount = await ingestReportForScan({
+        scanId,
+        reportId: report.id,
+        type: report.type,
+        severity: report.severity,
+        details: report.details,
+      });
+    } catch (ingestErr) {
+      console.error("Report ingestion (RAG) failed; report was saved:", ingestErr.message);
+      // Report is already saved; ingestion is best-effort (e.g. Ollama down)
+    }
 
     res.status(201).json({
       reportId: report.id,
       message: "Report saved",
       chunksIngested: chunkCount,
+      ...(chunkCount === 0 && { warning: "RAG ingestion skipped. Is Ollama running (e.g. ollama serve) with the embedding model pulled?" }),
     });
   } catch (err) {
     console.error(err);

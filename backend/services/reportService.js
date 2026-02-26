@@ -71,31 +71,45 @@ async function getReportForScan({ scanId, userId, token }) {
       severity: report.severity,
     };
 
-    // If no vulnerabilities array exists, wrap single finding
-    if (!Array.isArray(normalized.vulnerabilities)) {
+    // Normalize vulnerabilities: support new n8n shape (summary, location, business_impact, technical_evidence) and legacy flat shape
+    if (Array.isArray(normalized.vulnerabilities)) {
+      normalized.vulnerabilities = normalized.vulnerabilities.map((v) => {
+        const loc = v.location || {};
+        const te = v.technical_evidence || {};
+        return {
+          type: v.type,
+          severity: (v.severity || "").toUpperCase() || undefined,
+          summary: v.summary,
+          url: loc.url ?? v.url,
+          method: loc.method ?? v.method,
+          parameter: loc.parameter ?? v.parameter,
+          business_impact: Array.isArray(v.business_impact) ? v.business_impact : (Array.isArray(v.impact) ? v.impact : undefined),
+          remediation: Array.isArray(v.remediation) ? v.remediation : undefined,
+          technical_evidence: v.technical_evidence,
+          dbms: te.dbms ?? v.dbms,
+          injection_techniques: Array.isArray(te.injection_techniques) ? te.injection_techniques : (Array.isArray(v.injection_techniques) ? v.injection_techniques : undefined),
+          successful_payloads: Array.isArray(te.successful_payloads) ? te.successful_payloads : (Array.isArray(v.successful_payloads) ? v.successful_payloads : undefined),
+          evidence: v.evidence ?? (Object.keys(te).length > 0 ? te : undefined),
+        };
+      });
+    } else {
+      // No vulnerabilities array — details is a single finding (e.g. new n8n flat shape with location + technical_evidence)
+      const loc = base.location || {};
+      const te = base.technical_evidence || {};
       const single = {
         type: base.type || report.type,
-        url: base.url,
-        method: base.method,
-        parameter: base.parameter,
-        dbms: base.dbms,
-        injection_techniques: Array.isArray(base.injection_techniques)
-          ? base.injection_techniques
-          : undefined,
-        successful_payloads: Array.isArray(base.successful_payloads)
-          ? base.successful_payloads
-          : undefined,
-
-        // ✅ NEW FIELDS
-        impact: Array.isArray(base.impact) ? base.impact : undefined,
-        remediation: Array.isArray(base.remediation)
-          ? base.remediation
-          : undefined,
-
-        evidence: base.evidence,
-        severity:
-          (base.severity || report.severity || "").toUpperCase() ||
-          undefined,
+        severity: (base.severity || report.severity || "").toUpperCase() || undefined,
+        summary: base.summary,
+        url: loc.url ?? base.url,
+        method: loc.method ?? base.method,
+        parameter: loc.parameter ?? base.parameter,
+        dbms: te.dbms ?? base.dbms,
+        injection_techniques: Array.isArray(te.injection_techniques) ? te.injection_techniques : (Array.isArray(base.injection_techniques) ? base.injection_techniques : undefined),
+        successful_payloads: Array.isArray(te.successful_payloads) ? te.successful_payloads : (Array.isArray(base.successful_payloads) ? base.successful_payloads : undefined),
+        business_impact: Array.isArray(base.business_impact) ? base.business_impact : (Array.isArray(base.impact) ? base.impact : undefined),
+        remediation: Array.isArray(base.remediation) ? base.remediation : undefined,
+        technical_evidence: base.technical_evidence,
+        evidence: base.evidence ?? (Object.keys(te).length > 0 ? te : undefined),
       };
 
       const hasContent =
@@ -104,20 +118,23 @@ async function getReportForScan({ scanId, userId, token }) {
         single.method ||
         single.parameter ||
         single.dbms ||
-        (Array.isArray(single.injection_techniques) &&
-          single.injection_techniques.length > 0) ||
-        (Array.isArray(single.successful_payloads) &&
-          single.successful_payloads.length > 0) ||
-        (Array.isArray(single.impact) && single.impact.length > 0) ||
-        (Array.isArray(single.remediation) &&
-          single.remediation.length > 0) ||
-        (single.evidence &&
-          typeof single.evidence === "object" &&
-          Object.keys(single.evidence).length > 0);
+        single.summary ||
+        (Array.isArray(single.injection_techniques) && single.injection_techniques.length > 0) ||
+        (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
+        (Array.isArray(single.business_impact) && single.business_impact.length > 0) ||
+        (Array.isArray(single.remediation) && single.remediation.length > 0) ||
+        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0);
 
       if (hasContent) {
         normalized.vulnerabilities = [single];
       }
+    }
+
+    // Use first finding's type/severity for header when report-level are generic (e.g. "scan", "unknown")
+    if (normalized.vulnerabilities && normalized.vulnerabilities.length > 0) {
+      const first = normalized.vulnerabilities[0];
+      if (first.type && (!normalized.type || normalized.type === "scan")) normalized.type = first.type;
+      if (first.severity && (!normalized.severity || normalized.severity === "unknown")) normalized.severity = first.severity;
     }
 
     return normalized;
