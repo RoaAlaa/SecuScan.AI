@@ -2,6 +2,7 @@ const {
   createScan,
   listUserScans,
   listPendingScans,
+  deleteScan,
 } = require("../services/scanService");
 const { triggerScanWorkflow } = require("../services/n8nService");
 
@@ -65,5 +66,23 @@ exports.getPendingScans = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch pending scans" });
+  }
+};
+
+exports.deleteScan = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+    await deleteScan(id, userId);
+    res.status(200).json({ message: "Scan deleted" });
+  } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: err.message });
+    }
+    if (err.statusCode === 403) {
+      return res.status(403).json({ error: err.message });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete scan" });
   }
 };

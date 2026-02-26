@@ -51,7 +51,7 @@ export default function Chat() {
       <div className="px-6 py-4 border-b border-slate-800/50 shrink-0">
         <h1 className="text-lg font-bold text-white flex items-center gap-2">
           <MessageCircle size={22} className="text-blue-400" />
-          Vulnerability Chat
+          Secu Assistant
         </h1>
         <p className="text-sm text-gray-400 mt-1">
           Ask about SQL injection, XSS, LFI, RFI, and other vulnerabilities. Answers are based on the knowledge base.

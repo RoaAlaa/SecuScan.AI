@@ -61,12 +61,14 @@ export default function Report() {
     );
   }
 
-  const severityClass =
-    (report.severity || "").toLowerCase() === "critical"
+  const sev = (report.severity || "").toLowerCase()
+    sev === "critical"
       ? "bg-red-500/20 text-red-400 border-red-500/50"
-      : (report.severity || "").toLowerCase() === "high"
+      : sev === "high"
         ? "bg-orange-500/20 text-orange-400 border-orange-500/50"
-        : "bg-amber-500/20 text-amber-400 border-amber-500/50";
+        : sev === "unknown" || !report.severity
+          ? "bg-slate-500/20 text-slate-400 border-slate-500/50"
+          : "bg-amber-500/20 text-amber-400 border-amber-500/50";
 
   const vulns = report.vulnerabilities || [];
   const isVulnerabilitiesFormat = vulns.length > 0;
@@ -91,10 +93,7 @@ export default function Report() {
         <h1 className="text-xl font-bold text-white mb-2">Vulnerability Assessment Report</h1>
         <p className="text-xs text-gray-400 mb-4">Confidential — Findings and remediation guidance</p>
         <div className="flex flex-wrap items-center gap-3">
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${severityClass}`}>
-            <AlertTriangle size={12} />
-            {report.type || "Vulnerability"} — {report.severity || "N/A"}
-          </span>
+
           {report.scan_status && (
             <span className="px-2.5 py-1 rounded border text-xs font-medium border-slate-600 text-gray-400">
               {report.scan_status}

@@ -53,9 +53,32 @@ async function listPendingScans(userId) {
   });
 }
 
+const { deleteChunksByScan } = require("./vectorUtils");
+
+async function deleteScan(scanId, userId) {
+  const scan = await prisma.scan.findUnique({
+    where: { id: scanId },
+  });
+  if (!scan) {
+    const err = new Error("Scan not found");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (scan.userId !== userId) {
+    const err = new Error("You can only delete your own scans");
+    err.statusCode = 403;
+    throw err;
+  }
+  await deleteChunksByScan(scanId);
+  await prisma.reportAccess.deleteMany({ where: { scanId } });
+  await prisma.report.deleteMany({ where: { scanId } });
+  await prisma.scan.delete({ where: { id: scanId } });
+}
+
 module.exports = {
   createScan,
   listUserScans,
   listPendingScans,
+  deleteScan,
 };
 

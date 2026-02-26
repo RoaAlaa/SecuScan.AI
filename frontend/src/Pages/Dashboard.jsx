@@ -9,6 +9,7 @@ import {
   FileOutput,
   BotMessageSquare,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { api } from "../api/api";
 import Features from "../Components/Features/Features";
@@ -18,6 +19,20 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [pendingScans, setPendingScans] = useState([]);
   const [loadingPending, setLoadingPending] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const handleDeletePending = async (scanId) => {
+    if (deletingId) return;
+    setDeletingId(scanId);
+    try {
+      await api("DELETE", `/api/scans/${scanId}`);
+      setPendingScans((prev) => prev.filter((s) => s.id !== scanId));
+    } catch (_) {
+      setDeletingId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -56,13 +71,22 @@ export default function Dashboard() {
             {pendingScans.map((scan) => (
               <div
                 key={scan.id}
-                className="bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 flex items-center justify-between"
+                className="bg-slate-900/70 border border-slate-700 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <Loader2 size={18} className="text-blue-400 animate-spin shrink-0" />
                   <span className="text-sm text-gray-300 truncate">{scan.targetUrl}</span>
                 </div>
-                <span className="text-xs text-gray-500">Report will be sent to your email when ready</span>
+                <span className="text-xs text-gray-500 shrink-0">Report will be sent to your email when ready</span>
+                <button
+                  type="button"
+                  onClick={() => handleDeletePending(scan.id)}
+                  disabled={deletingId === scan.id}
+                  className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition shrink-0 disabled:opacity-50"
+                  title="Delete scan"
+                >
+                  <Trash2 size={18} />
+                </button>
               </div>
             ))}
           </div>

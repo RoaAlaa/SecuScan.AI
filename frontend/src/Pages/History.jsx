@@ -1,12 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { History as HistoryIcon, FileText, Loader2 } from "lucide-react";
+import { History as HistoryIcon, FileText, Loader2, Trash2 } from "lucide-react";
 import ProtectedRoute from "../Components/ProtectedRoute/ProtectedRoute";
 import { api } from "../api/api";
 
 function HistoryContent() {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const handleDelete = async (e, scanId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (deletingId) return;
+    setDeletingId(scanId);
+    try {
+      await api("DELETE", `/api/scans/${scanId}`);
+      setScans((prev) => prev.filter((s) => s.id !== scanId));
+    } catch (_) {
+      setDeletingId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +83,15 @@ function HistoryContent() {
               <span className="text-xs text-gray-500 shrink-0">
                 {scan.status === "pending" ? "Pending" : new Date(scan.createdAt).toLocaleDateString()}
               </span>
+              <button
+                type="button"
+                onClick={(e) => handleDelete(e, scan.id)}
+                disabled={deletingId === scan.id}
+                className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition shrink-0 disabled:opacity-50"
+                title="Delete report"
+              >
+                <Trash2 size={18} />
+              </button>
             </Link>
           </li>
         ))}

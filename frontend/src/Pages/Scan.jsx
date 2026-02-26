@@ -132,8 +132,7 @@ export default function Scan() {
             <label className="block text-xs text-gray-400 mb-1">Scan Type</label>
             <select className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
               <option>Full Scan (All vulnerabilities)</option>
-              <option>Quick Scan</option>
-              <option>OWASP Top 10</option>
+              <option>SQL Injection</option>
             </select>
           </div>
 
