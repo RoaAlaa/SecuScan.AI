@@ -61,8 +61,8 @@ export default function Report() {
     );
   }
 
-  const vulns = report.vulnerabilities || [];
-  const isVulnerabilitiesFormat = vulns.length > 0;
+  const vulns = report.vulnerabilities ?? [];
+  const isVulnerabilitiesFormat = Array.isArray(report.vulnerabilities);
   const severityClass =
     (report.severity || "").toLowerCase() === "critical"
       ? "bg-red-500/20 text-red-400 border-red-500/50"
@@ -92,7 +92,7 @@ export default function Report() {
         <h1 className="text-xl font-bold text-white mb-2">Vulnerability Assessment Report</h1>
         <p className="text-xs text-gray-400 mb-4">Confidential — Findings and remediation guidance</p>
         <div className="flex flex-wrap items-center gap-3">
-          {isVulnerabilitiesFormat && (report.type || report.severity) && (
+          {isVulnerabilitiesFormat && vulns.length > 0 && (report.type || report.severity) && (
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${severityClass}`}>
               <AlertTriangle size={12} />
               {report.type || "Vulnerability"} — {report.severity || "N/A"}
@@ -109,6 +109,12 @@ export default function Report() {
       {isVulnerabilitiesFormat && (
         <section className="mb-6">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Findings ({vulns.length})</h2>
+          {vulns.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-6 text-center">
+              <p className="text-gray-300 text-sm">No vulnerabilities detected.</p>
+              <p className="text-gray-500 text-xs mt-1">The scan completed successfully with no findings.</p>
+            </div>
+          ) : (
           <div className="space-y-6">
             {vulns.map((v, idx) => (
               <div key={idx} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
@@ -194,6 +200,7 @@ export default function Report() {
               </div>
             ))}
           </div>
+          )}
         </section>
       )}
 

@@ -8,27 +8,37 @@ const { getReportForScan } = require("../services/reportService");
  */
 exports.saveReport = async (req, res) => {
   try {
-    const body = req.body || {};
+    let body = req.body;
+    if (Array.isArray(body) && body.length > 0) {
+      body = body[0];
+    }
+    body = body || {};
     let { scanId, type, severity, details } = body;
 
     if (!scanId) {
       return res.status(400).json({
-        error: "scanId and details (object) are required",
+        error: "scanId is required",
       });
     }
 
     if (typeof details === "string") {
       try {
-        details = JSON.parse(details);
+        details = details.trim() ? JSON.parse(details) : {};
       } catch (_) {
         return res.status(400).json({ error: "details must be valid JSON" });
       }
     }
 
-    if (!details || typeof details !== "object" || Array.isArray(details)) {
-      return res.status(400).json({
-        error: "scanId and details (object) are required",
-      });
+    // details is optional; allow empty / no vulnerabilities
+    if (details == null || typeof details !== "object") {
+      details = {};
+    }
+    if (Array.isArray(details)) {
+      // n8n sometimes sends [{ scanId, details }] — take first element's details
+      const first = details[0];
+      details = first && typeof first === "object" && first.details != null
+        ? (typeof first.details === "string" ? JSON.parse(first.details) : first.details)
+        : {};
     }
 
     const scan = await prisma.scan.findUnique({

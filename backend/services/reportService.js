@@ -112,8 +112,7 @@ async function getReportForScan({ scanId, userId, token }) {
         evidence: base.evidence ?? (Object.keys(te).length > 0 ? te : undefined),
       };
 
-      const hasContent =
-        single.type ||
+      const hasRealFinding =
         single.url ||
         single.method ||
         single.parameter ||
@@ -123,10 +122,14 @@ async function getReportForScan({ scanId, userId, token }) {
         (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
         (Array.isArray(single.business_impact) && single.business_impact.length > 0) ||
         (Array.isArray(single.remediation) && single.remediation.length > 0) ||
-        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0);
+        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0) ||
+        (single.type && single.type !== "scan") ||
+        (single.severity && (single.severity || "").toUpperCase() !== "UNKNOWN");
 
-      if (hasContent) {
+      if (hasRealFinding) {
         normalized.vulnerabilities = [single];
+      } else {
+        normalized.vulnerabilities = [];
       }
     }
 
