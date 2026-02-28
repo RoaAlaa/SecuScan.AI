@@ -69,17 +69,22 @@ async function getReportForScan({ scanId, userId, token }) {
       ...base,
       type: report.type,
       severity: report.severity,
+      scan_status: base.scan_status ?? undefined,
     };
 
-    // Normalize vulnerabilities: support new n8n shape (summary, location, business_impact, technical_evidence) and legacy flat shape
+    // Normalize vulnerabilities: support new shape (summary, location, Attack Scenario, Root Cause Analysis, business_impact, technical_evidence) and legacy flat shape
     if (Array.isArray(normalized.vulnerabilities)) {
       normalized.vulnerabilities = normalized.vulnerabilities.map((v) => {
         const loc = v.location || {};
         const te = v.technical_evidence || {};
+        const attackScenario = v["Attack Scenario"] ?? v.attack_scenario;
+        const rootCause = v["Root Cause Analysis"] ?? v.root_cause_analysis;
         return {
           type: v.type,
           severity: (v.severity || "").toUpperCase() || undefined,
           summary: v.summary,
+          attack_scenario: typeof attackScenario === "string" ? attackScenario : undefined,
+          root_cause_analysis: typeof rootCause === "string" ? rootCause : undefined,
           url: loc.url ?? v.url,
           method: loc.method ?? v.method,
           parameter: loc.parameter ?? v.parameter,
@@ -96,10 +101,14 @@ async function getReportForScan({ scanId, userId, token }) {
       // No vulnerabilities array — details is a single finding (e.g. new n8n flat shape with location + technical_evidence)
       const loc = base.location || {};
       const te = base.technical_evidence || {};
+      const attackScenario = base["Attack Scenario"] ?? base.attack_scenario;
+      const rootCause = base["Root Cause Analysis"] ?? base.root_cause_analysis;
       const single = {
         type: base.type || report.type,
         severity: (base.severity || report.severity || "").toUpperCase() || undefined,
         summary: base.summary,
+        attack_scenario: typeof attackScenario === "string" ? attackScenario : undefined,
+        root_cause_analysis: typeof rootCause === "string" ? rootCause : undefined,
         url: loc.url ?? base.url,
         method: loc.method ?? base.method,
         parameter: loc.parameter ?? base.parameter,

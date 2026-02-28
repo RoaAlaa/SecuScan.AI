@@ -21,6 +21,7 @@ function reportToText(details, type = "", severity = "") {
   if (type) parts.push(`Type: ${type}`);
   if (severity) parts.push(`Severity: ${severity}`);
   if (details && typeof details === "object") {
+    if (details.scan_status && String(details.scan_status).trim()) parts.push(`Scan status: ${String(details.scan_status).trim()}`);
     if (details.summary) parts.push(`Summary: ${details.summary}`);
     if (details.findings && Array.isArray(details.findings)) {
       details.findings.forEach((f, i) => {
@@ -34,11 +35,15 @@ function reportToText(details, type = "", severity = "") {
           parts.push(`Vulnerability ${i + 1}: ${v}`);
           return;
         }
-        // New n8n shape: summary, location, business_impact, remediation, technical_evidence
+        // Shape: summary, location, Attack Scenario, Root Cause Analysis, business_impact, remediation, technical_evidence
         const lines = [];
         if (v.type) lines.push(`Type: ${v.type}`);
         if (v.severity) lines.push(`Severity: ${v.severity}`);
         if (v.summary) lines.push(`Summary: ${v.summary}`);
+        const attackScenario = v["Attack Scenario"] ?? v.attack_scenario;
+        if (attackScenario && String(attackScenario).trim()) lines.push(`Attack Scenario: ${String(attackScenario).trim()}`);
+        const rootCause = v["Root Cause Analysis"] ?? v.root_cause_analysis;
+        if (rootCause && String(rootCause).trim()) lines.push(`Root Cause Analysis: ${String(rootCause).trim()}`);
         const loc = v.location || {};
         if (loc.url || loc.method || loc.parameter) {
           lines.push(`Location: ${loc.url || ""} | ${loc.method || ""} | ${loc.parameter || ""}`);

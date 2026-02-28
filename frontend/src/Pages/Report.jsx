@@ -164,6 +164,12 @@ export default function Report() {
                     <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.summary}</p>
                   </div>
                 )}
+                {(v.attack_scenario != null && String(v.attack_scenario).trim() !== "") && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Attack Scenario</p>
+                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.attack_scenario}</p>
+                  </div>
+                )}
                 <div className="mb-3">
                   <p className="text-gray-500 text-xs mb-1">Location</p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
@@ -172,6 +178,12 @@ export default function Report() {
                     <div><span className="text-gray-500">Parameter</span><p className="text-gray-300">{v.parameter ?? "—"}</p></div>
                   </div>
                 </div>
+                {(v.root_cause_analysis != null && String(v.root_cause_analysis).trim() !== "") && (
+                  <div className="mb-3">
+                    <p className="text-gray-500 text-xs mb-1">Root Cause Analysis</p>
+                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.root_cause_analysis}</p>
+                  </div>
+                )}
                 {(v.business_impact?.length > 0 || v.impact?.length > 0) && (
                   <div className="mb-3">
                     <p className="text-gray-500 text-xs mb-1">Business impact</p>

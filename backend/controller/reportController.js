@@ -40,6 +40,9 @@ exports.saveReport = async (req, res) => {
         ? (typeof first.details === "string" ? JSON.parse(first.details) : first.details)
         : {};
     }
+    // If report shape is sent at top level (scan_status, vulnerabilities), merge into details
+    if (body.scan_status != null && details.scan_status == null) details = { ...details, scan_status: body.scan_status };
+    if (Array.isArray(body.vulnerabilities) && !Array.isArray(details.vulnerabilities)) details = { ...details, vulnerabilities: body.vulnerabilities };
 
     const scan = await prisma.scan.findUnique({
       where: { id: scanId },
