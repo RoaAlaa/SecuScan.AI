@@ -9,10 +9,13 @@ export default function Report() {
   const accessToken = searchParams.get("token");
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (!scanId) return;
     let cancelled = false;
+    let timeoutId;
 
     async function fetchReport() {
       try {
@@ -26,24 +29,53 @@ export default function Report() {
         const data = await res.json().catch(() => ({}));
         if (!cancelled) {
           if (!res.ok) {
-            setError(data.error || "Failed to load report");
+            const message = data.error || "Failed to load report";
+            setError(message);
             setReport(null);
+
+            // If backend says report is not ready yet, keep polling until webhook finishes and saves it
+            if (res.status === 404 && typeof message === "string" && message.toLowerCase().includes("not ready")) {
+              setIsWaiting(true);
+              timeoutId = setTimeout(() => {
+                if (!cancelled) {
+                  setRetryCount((c) => c + 1);
+                }
+              }, 5000);
+            } else {
+              setIsWaiting(false);
+            }
           } else {
             setReport(data);
             setError(null);
+            setIsWaiting(false);
           }
         }
       } catch (err) {
         if (!cancelled) {
           setError(err.message || "Failed to load report");
           setReport(null);
+          setIsWaiting(false);
         }
       }
     }
 
     fetchReport();
-    return () => { cancelled = true; };
-  }, [scanId, accessToken]);
+    return () => {
+      cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [scanId, accessToken, retryCount]);
+
+  if (isWaiting && !report) {
+    return (
+      <div className="flex flex-1 items-center justify-center py-16 px-6">
+        <p className="text-sm text-gray-400">
+          Report is not ready yet. Waiting for the scan to finish… this page will refresh automatically when the
+          webhook sends the result.
+        </p>
+      </div>
+    );
+  }
 
   if (error && !report) {
     return (

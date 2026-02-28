@@ -26,6 +26,8 @@ function HistoryContent() {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId;
+
     async function fetchScans() {
       try {
         const data = await api("GET", "/api/scans");
@@ -36,8 +38,16 @@ function HistoryContent() {
         if (!cancelled) setLoading(false);
       }
     }
+
+    // Initial load
     fetchScans();
-    return () => { cancelled = true; };
+    // Auto-refresh history periodically so completed scans appear without manual reload
+    intervalId = setInterval(fetchScans, 10000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   if (loading) {

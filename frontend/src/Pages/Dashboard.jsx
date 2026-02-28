@@ -36,6 +36,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId;
+
     async function fetchPending() {
       try {
         const data = await api("GET", "/api/scans/pending");
@@ -46,8 +48,16 @@ export default function Dashboard() {
         if (!cancelled) setLoadingPending(false);
       }
     }
+
+    // Initial load
     fetchPending();
-    return () => { cancelled = true; };
+    // Auto-refresh pending scans periodically so dashboard updates when webhook finishes
+    intervalId = setInterval(fetchPending, 10000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   return (

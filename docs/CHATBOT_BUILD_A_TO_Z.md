@@ -145,6 +145,61 @@ The chatbot doesn’t learn from conversations. Its factual content comes from a
 
 ---
 
+### 7.1 Ingestion in depth: how it works
+
+There are **two ingestion paths** in the project.
+
+#### Knowledge ingestion (manual / script)
+
+- **Trigger:** You run `node scripts/ingestKnowledge.js` (or `npm run ingest:knowledge`) from the backend directory.
+- **Steps:**
+  1. Read all `.md` files from `backend/docs/security/`.
+  2. For each file: `splitMarkdownIntoChunks(content)` (split by `##` first, then by chunk size 600 / overlap 100).
+  3. Build an array of chunk objects: `{ content, sourceType: "knowledge", scanId: null, reportId: null, metadata: { source: filename, topic } }`.
+  4. Call `storeChunks(allChunks)`:
+     - For each chunk, `storeChunk` calls `getEmbedding(content)` (Ollama), then `INSERT` into `DocumentChunk` with a new UUID.
+     - Chunks are processed **sequentially** to avoid overloading Ollama and memory.
+- **Result:** Rows in `DocumentChunk` with `sourceType = "knowledge"`. The chatbot retrieves only these when answering (no report chunks).
+
+#### Report ingestion (automatic on save)
+
+- **Trigger:** When a report is saved (e.g. n8n webhook calls `POST /api/report` and the controller calls `ingestReportForScan`).
+- **Steps:**
+  1. `reportToText(details, type, severity)` converts the report JSON into one readable string (summary, vulnerabilities with location/business_impact/remediation/technical_evidence, etc.).
+  2. `splitIntoChunks(text)` (size 600, overlap 100) produces text chunks.
+  3. Each chunk is wrapped as `{ content, sourceType: "report", scanId, reportId, metadata: { type, severity } }`.
+  4. **Delete** all existing report chunks for this scan: `deleteChunksByScan(scanId)` (only deletes rows where `sourceType = 'report'` and `scanId = ...`).
+  5. `storeChunks(chunks)` inserts the new report chunks (each gets a new UUID and embedding).
+- **Result:** The scan’s report content is **replaced** in the vector store; no accumulation of old report chunks for that scan.
+
+So: **knowledge** = append-only (script adds chunks, never removes). **Report** = replace-by-scan (delete then insert for that `scanId`).
+
+---
+
+### 7.2 Can ingestion duplicate data?
+
+- **Report ingestion: no.** Before inserting, we run `deleteChunksByScan(scanId)`. Each save overwrites that scan’s report chunks, so you don’t get duplicate report chunks for the same scan.
+- **Knowledge ingestion: yes.** The script does **not** delete existing knowledge chunks. Every time you run `ingestKnowledge.js`, it **adds** new rows. Same file content will produce new chunks with new IDs and new embeddings, so you get **duplicate content** (same text, different rows). Retrieval can then return near-identical chunks and waste context.
+
+So duplication is a real risk only for **knowledge** if you re-run the script without clearing or upserting.
+
+---
+
+### 7.3 How to make ingestion better
+
+- **Knowledge: avoid duplicates**
+  - **Option A – delete then re-ingest:** Before `storeChunks`, delete all chunks with `sourceType = 'knowledge'` (e.g. add `deleteChunksBySourceType('knowledge')` and call it at the start of the script). Then each run is a full refresh: no duplicates.
+  - **Option B – upsert by source:** Identify chunks by something stable (e.g. `metadata->>'source'` + chunk index or a content hash). Delete only chunks for the same `source` (or same hash), then insert the new set for that source. That way you can re-ingest one file without touching others.
+- **Knowledge: performance and robustness**
+  - **Batching:** Insert in batches (e.g. 50 chunks) and/or batch embedding calls if Ollama supports it, to balance speed and memory.
+  - **Idempotent runs:** Document that “run script = replace all knowledge” (Option A) or “run script with file X = replace only X” (Option B), so re-runs are predictable.
+- **Report: already safe**
+  - Report ingestion is already idempotent per scan (delete then insert). Optional improvement: skip ingestion when `details` is empty or very small to avoid storing useless chunks.
+- **Both: observability**
+  - Log chunk counts and, for knowledge, warn if a run would create a large number of new rows (possible duplicate run).
+
+---
+
 ## 8. LLM generation (Ollama)
 
 ### General
@@ -195,3 +250,551 @@ The actual answer text is produced by a local language model (e.g. Llama) via Ol
 | LLM | Generate answer from context + question | Ollama `/api/generate`, `ragService.generateWithOllama` |
 
 That’s the full A-to-Z of what is used to build the SecuScan chatbot, in both general and technical terms.
+
+---
+
+## 11. Theory behind chunking, embeddings, and similarity
+
+### 11.1 Embeddings (semantic meaning as vectors)
+
+- **Intuition:** Embeddings turn words/sentences into points in a high‑dimensional space (here 768‑D). Texts that “mean” similar things end up near each other, even if they don’t share exact keywords.  
+- **How models learn this:** During pre‑training, the embedding model sees huge amounts of text and is trained to predict masked words, next sentences, etc. To do this well, it must encode context and meaning into vectors. Phrases that appear in similar contexts (e.g. “SQL injection” and “unsanitized input leads to database compromise”) get similar vectors.
+- **Why this works for security Q&A:**  
+  - A user might ask “How do I stop attackers from injecting SQL into my login form?”  
+  - The docs might say “Use parameterized queries to prevent SQL Injection attacks.”  
+  - Traditional keyword search might miss this if wording is different; vector similarity will still bring those chunks close together because they share the same underlying concept (SQLi prevention).
+
+Mathematically, each embedding is a vector \(\mathbf{v} \in \mathbb{R}^{768}\). Similarity is computed via **cosine similarity**, which measures the angle between two vectors (1 = same direction, 0 = orthogonal, -1 = opposite).
+
+### 11.2 Similarity search (finding the right chunks)
+
+- **Cosine distance in pgvector:** The database stores all chunk embeddings as a `vector` column. When we search, we compute cosine distance between the query embedding and each stored embedding using `<=>` (pgvector’s distance operator). Lower distance = higher similarity.
+- **HNSW index:** The migration creates an HNSW index (`vector_cosine_ops`). HNSW is a graph‑based approximate nearest‑neighbor algorithm; it lets us search thousands of vectors very fast by walking a small part of the space instead of scanning everything.
+- **Why “approximate” is fine:** We don’t need the mathematically perfect nearest neighbors—just a small set of *good* relevant chunks. Approximate search gives a huge speed boost with negligible quality loss in this use case.
+
+In intuition terms: similarity search answers “Which stored paragraphs *feel* most like this question?” rather than “Which paragraphs contain this exact word?”
+
+### 11.3 Chunking (why we cut documents)
+
+- **Context window limits:** Embedding models and LLMs can only process a certain number of tokens at once. Big raw files (full OWASP docs) exceed that limit and would also dilute relevance.
+- **Locality of information:** Security explanations are often local: a few paragraphs talk about SQLi, another section talks about XSS, etc. Splitting into overlapping chunks keeps each piece focused on a single topic.
+- **Overlap for continuity:** Overlap (e.g. 100 characters) ensures that sentences spanning chunk boundaries are still captured; otherwise an important sentence cut in half might be under‑represented.
+
+Trade‑offs:
+
+- **Small chunks:** More precise retrieval, but you may lose broader context (e.g. “how to fix” separated from “what is the issue”).  
+- **Large chunks:** More context per hit, but risk mixing topics and returning irrelevant text with the relevant bit.  
+
+SecuScan uses moderate chunk size and overlap (600 / 100) as a good default.
+
+### 11.4 Putting it together (RAG science)
+
+The RAG loop is essentially:
+
+1. **Embed the question** → find its “point” in meaning space.  
+2. **Retrieve nearest chunks** → approximate k‑nearest neighbors by cosine similarity.  
+3. **Give those chunks to the LLM** → the model conditions its answer on this context, which grounds it in your curated docs instead of guessing.
+
+This design dramatically reduces hallucinations and ensures answers follow your security content (SQLi/XSS/LFI/RFI docs) rather than whatever the base model “thinks”.
+
+---
+
+## 12. How to enhance the chatbot further
+
+If you want to iterate on SecuScan’s assistant, here are the main levers and what improving each one would look like.
+
+### 12.1 Better chunking strategies
+
+- **Tune chunk size and overlap:**  
+  - For short, dense docs, smaller chunks (300–400 chars) can give finer‑grained retrieval.  
+  - For long, narrative docs, slightly larger chunks (800–1000 chars) can keep each answer more self‑contained.  
+- **Structure‑aware chunking:**  
+  - Split by markdown headings (`##`, `###`) and code blocks so each chunk lines up with a conceptual section (already partly done in `splitMarkdownIntoChunks`).  
+  - For future: treat lists like “Remediation steps” as atomic units so they don’t get split across chunks.
+
+If you want, you can ask for a custom chunking policy per document type (e.g. “how‑to guides” vs “reference”), and we can design it.
+
+### 12.2 Better system prompt and behavior
+
+- **Clarify tone and target audience:**  
+  - For non‑security users, emphasize plain language and concrete examples.  
+  - For pentesters, allow more technical jargon, payload examples, and CVSS‑style reasoning.
+- **Stronger guardrails:**  
+  - Make refusal rules explicit for topics outside scope (e.g. exploit development beyond education).  
+  - Enforce structure in answers (“Summary / Impact / Remediation”) so chatbot replies match the report style.
+- **Adaptive behavior:**  
+  - Use user profile (role: dev, security engineer, manager) to switch between more/less technical responses.
+
+You can ask for a redesigned system prompt and we can generate a new version tailored to your audience and use‑cases.
+
+### 12.3 Knowledge base quality
+
+- **More and better docs:** The chatbot is only as good as the security content you ingest. Adding curated content on:
+  - Framework‑specific security (Django, Laravel, React, etc.)
+  - Common misconfigurations (CORS, headers, TLS)
+  - Real‑world examples and playbooks
+- **Versioning and tagging:** Use `metadata` (e.g. `topic`, `framework`, `severity`) to:
+  - Prefer more recent or higher‑quality docs.
+  - Filter retrieval by tag (e.g. “only OWASP content” for certain questions).
+
+### 12.4 Retrieval tuning
+
+- **Similarity threshold:** Adjust `RAG_SIMILARITY_THRESHOLD` to drop weak matches. Too low → noisy context; too high → sometimes “no context found”.  
+- **Dynamic `k` (number of chunks):** Use more chunks for broad questions, fewer chunks for narrow ones.  
+- **Hybrid search (future):** Combine keyword filters with vector similarity (e.g. must contain “SQL” but sort by embedding similarity).
+
+### 12.5 Response streaming and UX
+
+- **Streaming responses:** Using `stream: true` with Ollama lets you show answers token‑by‑token (“typing” effect), making the assistant feel more responsive even for long answers. The backend now supports streaming from Ollama and accumulates the text; the next step would be to expose it as a streaming endpoint and update the frontend to display tokens live.
+- **Inline links to reports:** Enrich answers with links into specific scan reports (“Open this finding in SecuScan”) using report‑level chunks.
+
+### 12.6 Multi‑source RAG (reports + docs)
+
+- Right now, the chatbot uses **knowledge‑only** chunks. A natural extension is:
+  - Include **report chunks** for a specific scan (e.g. “Explain this finding in scan X”).  
+  - Combine “global” security knowledge and “local” scan data in the same context block.
+
+---
+
+## 13. Why we designed it this way (trade‑offs)
+
+When someone asks “Why did you do it like this and not that?”, you can think in terms of **goal → options → choice → trade‑offs → future**. Below are ready‑made answers for the main pieces.
+
+### 13.1 Why use RAG at all?
+
+- **Goal:** Give accurate, explainable security answers grounded in our own content (SQLi/XSS/LFI/RFI docs), not whatever the base model “remembers”.
+- **Options:**
+  - Call the LLM directly with just the user question.
+  - Hard‑code a FAQ or decision tree.
+  - Use RAG: retrieve from our docs, then have the LLM answer based only on those.
+- **Choice:** RAG with embeddings + pgvector.
+- **Trade‑offs:**
+  - Pros: Less hallucination, answers traceable to sources, easy to update by re‑ingesting docs.
+  - Cons: Extra infra (vector DB, ingestion), retrieval tuning needed.
+
+### 13.2 Why local embeddings and Ollama, not a cloud API?
+
+- **Goal:** Keep data local (security context), control models, and avoid external latency/cost.
+- **Options:** Hosted APIs (OpenAI, etc.) vs. local Ollama.
+- **Choice:** Ollama with `nomic-embed-text` and `llama3.2` by default.
+- **Trade‑offs:**
+  - Pros: Privacy, offline capability, predictable cost, easy to swap models locally.
+  - Cons: You manage hardware and model downloads; slightly more setup.
+
+### 13.3 Why pgvector in Postgres, not a separate vector DB?
+
+- **Goal:** Simple stack: one DB for relational data and vectors.
+- **Options:** Keep everything in Postgres via pgvector vs. add a dedicated vector DB.
+- **Choice:** pgvector in the same Postgres instance as the rest of SecuScan.
+- **Trade‑offs:**
+  - Pros: Fewer moving parts, reuse Prisma, single backup/ops story.
+  - Cons: Specialized vector DBs can scale further or have fancy features, but are overkill here.
+
+### 13.4 Why this chunking strategy (size + overlap + markdown‑aware)?
+
+- **Goal:** Make each chunk small enough for efficient embedding/RAG, but big enough to contain a complete thought (definition + example + remediation).
+- **Choice:** ~600 chars with 100 overlap, plus a markdown‑aware splitter that prefers section boundaries.
+- **Why not one big chunk per file?**
+  - Retrieval would bring huge blobs and waste context window; answers become vague.
+- **Why not tiny chunks (sentences only)?**
+  - You lose surrounding context; remediation can get separated from the vulnerability explanation.
+
+### 13.5 Why narrow the system prompt to 4 vulnerability types?
+
+- **Goal:** High accuracy on a focused domain (SQLi, XSS, RFI, LFI) instead of low accuracy on everything.
+- **Choice:** Explicitly restrict the assistant to those four, and define strict refusal/redirect rules.
+- **Trade‑offs:**
+  - Pros: Easier to test and trust; avoids the model “pretending to know” everything about security.
+  - Cons: It will refuse questions outside that scope; needs extension if you want broader coverage later.
+
+### 13.6 Why initially return answers in one bulk, not stream to the UI?
+
+- **Goal:** Ship a reliable first version quickly, with a simple API contract.
+- **Choice:** Backend calls Ollama, constructs the full answer, and returns JSON `{ answer, sources }` to the frontend.
+- **Trade‑offs:**
+  - Pros: Easier React code (`await api(...); setMessages([...])`), simpler debugging and logging.
+  - Cons: User waits a bit before seeing anything for long answers. Streaming, which we partially wired via Ollama, is the next UX improvement step.
+
+You can reuse these explanations for almost any “Why not the other way?” question by highlighting the **goal** and the **trade‑offs**.
+
+---
+
+## 14. How could we make it better? (Knowledge base, embeddings, similarity, everything)
+
+This section is your ready‑made answer to “If you had more time, how would you improve the chatbot?”
+
+### 14.1 Make the knowledge base better
+
+- **Broader, deeper content:**
+  - Add docs on more vulnerability classes (IDOR, CSRF, SSRF, auth issues, misconfigurations).
+  - Ingest vendor‑specific or framework‑specific security guides (e.g. Django, Laravel, Node/Express).
+  - Add practical playbooks: “steps to triage SQLi in real app”, “checklist before production”.
+- **Higher signal, less noise:**
+  - Curate and clean content so it’s concise and non‑contradictory.
+  - Tag metadata (topic, framework, severity, source, date) and use it to prefer fresher or higher‑quality chunks.
+- **Evaluation:**
+  - Maintain a small test set of questions and expected answer patterns to see if new content helps or hurts.
+
+### 14.2 Make embeddings better
+
+- **Model choice:**
+  - Try newer or domain‑tuned embedding models (security‑focused if available).
+  - Benchmark: for a fixed set of questions, compare which embeddings retrieve more relevant chunks.
+- **Input normalization:**
+  - Normalize URLs, strip boilerplate, or highlight key tokens (e.g. parameters, HTTP methods) before embedding.
+  - For code‑heavy content, consider encoding code blocks differently (or even using code‑aware embeddings).
+- **Task‑specific embeddings (future):**
+  - Use different embeddings for “definition” vs “how‑to” vs “remediation” sections and choose which to query based on the question type.
+
+### 14.3 Make similarity search better
+
+- **Tuning thresholds:**
+  - Adjust `RAG_SIMILARITY_THRESHOLD` so irrelevant chunks are filtered out; find a sweet spot where we rarely get “no context” but mostly see high‑quality chunks.
+- **Dynamic number of chunks (k):**
+  - Fewer chunks for narrow questions (“What is XSS?”); more for open questions (“Compare SQLi and XSS risks”).
+- **Hybrid retrieval:**
+  - Combine keyword filters with vector similarity:
+    - Filter by topic tag (e.g. `topic = "sql_injection"`) then sort by cosine similarity.
+    - Or require certain keywords (like “SQL” or “payload”) but still rank by embeddings.
+- **Per‑scan personalization:**
+  - When answering about a specific scan, restrict to chunks tagged with that `scanId` or `reportId` so we don’t mix global docs with unrelated data.
+
+### 14.4 Make chunking smarter
+
+- **Doc‑type‑aware chunking:**
+  - Smaller chunks for glossary‑style docs; larger for narrative guides.
+  - Avoid splitting structured lists like “Impact” / “Remediation” across chunks.
+- **Semantic chunk boundaries (future):**
+  - Use simple NLP (headings, paragraphs, bullet groups) rather than raw character counts as the primary splitting strategy, then enforce max size.
+
+### 14.5 Make the system prompt smarter
+
+- **Audience‑adaptive:**
+  - Variant prompts for:
+    - Developers (more code examples, less theory).
+    - Managers (focus on impact and risk, less payload detail).
+    - Security engineers (deeper technical analysis, CVSS reasoning).
+- **Structured answers:**
+  - Require a consistent format:
+    - “Summary / Technical detail / Impact / Remediation / References”.
+  - This makes answers easier to scan and closer to your report format.
+- **Safer behavior:**
+  - Explicitly forbid certain content (e.g. step‑by‑step exploit instructions) while still explaining concepts.
+
+### 14.6 Make the UX and streaming better
+
+- **True end‑to‑end streaming:**
+  - We already stream from Ollama to the backend. Next:
+    - Expose a streaming endpoint (e.g. SSE) from the backend.
+    - Update `Chat.jsx` to consume chunks and show the answer “typing out” live.
+- **Better source display:**
+  - Show short snippets of the actual text used (highlighted), not just file names.
+  - Link directly into a “knowledge viewer” in the app.
+- **Contextual actions:**
+  - From a chatbot answer, let the user jump to:
+    - A full article in the knowledge base.
+    - A specific scan report section.
+
+### 14.7 Multi‑source and multi‑step reasoning
+
+- **Combine knowledge + reports:**
+  - When the user asks about “my scan”, retrieve both:
+    - General SQLi docs.
+    - Report chunks tagged with that scan.
+- **Chain‑of‑thought internally, concise externally:**
+  - Use internal reasoning (e.g. chain‑of‑thought) but still return short, clean answers to the user.
+
+---
+
+In summary: the current chatbot is a solid, focused RAG system for core web vulnerabilities. To make it “even better”, you would deepen and tag the knowledge base, upgrade embeddings and retrieval, refine chunking and prompts, and improve UX and multi‑source reasoning. This gives you plenty of material to answer “Why this way?” and “How would you improve it?” in your seminar. 
+
+---
+
+## 15. Exact implementation map: how everything is built in this codebase
+
+This section is a **direct map from features to files and functions** in this repository. Use it when you need to say “this is implemented *here* and it works like *this*”.
+
+### 15.1 Frontend chatbot flow
+
+- **Chat screen component**
+  - **File:** `frontend/src/Pages/Chat.jsx`
+  - **Key pieces:**
+    - `messages` state: array of `{ role: "user" | "assistant", content: string, sources?: Array }`.
+    - `handleSubmit(e)`: prevents form submit default, validates/trims the input, pushes the user message into `messages`, then calls the backend:
+      - `api("POST", "/api/chat", { message: input.trim() })`.
+    - On success: appends an assistant message:
+      - `{ role: "assistant", content: data.answer, sources: data.sources || [] }`.
+    - On error: removes the last optimistic user message and restores the input so the user can retry.
+    - Uses a `messagesEndRef` + `useEffect` to scroll to the latest message after each update.
+  - **How it works:** The component is a very thin client: it does not do any ML or retrieval itself. It just sends the raw text to `/api/chat`, then renders whatever JSON the backend returns.
+
+- **API helper**
+  - **File:** `frontend/src/api/api.js`
+  - **Key function:** `api(method, path, body)`
+    - Builds full URL from `VITE_API_URL` (e.g. `http://localhost:5000`).
+    - Adds `Content-Type: application/json` and `Authorization: Bearer <token>` if a user is logged in.
+    - Sends `fetch` with JSON body and parses the JSON response.
+    - If `res.ok` is false, throws an `Error` with `data.error` or a generic fallback.
+  - **How it works:** Centralizes HTTP logic so `Chat.jsx` just calls `api("POST", "/api/chat", { message })` and handles success/error.
+
+### 15.2 Backend entrypoint for the chatbot
+
+- **Route registration**
+  - **File:** `backend/server.js`
+  - Mounting:
+    - `app.use("/api/chat", chatRoutes);`
+
+- **Chat router**
+  - **File:** `backend/routes/chatRoutes.js`
+  - Content:
+    - `router.post("/", chat);`
+    - Exports router.
+  - **How it works:** For every `POST /api/chat` request, Express calls `chatController.chat`.
+
+- **Chat controller**
+  - **File:** `backend/controller/chatController.js`
+  - Core logic:
+    - Reads `const { message } = req.body;`
+    - Validates it: must be a non-empty string; otherwise returns `400 { error: "message is required" }`.
+    - Calls `const { answer, chunks } = await chatWithKnowledge(message.trim());`
+    - Maps chunks to simple source metadata:
+      - `sources = chunks.map(c => ({ id: c.id, preview: c.content.slice(0, 160), similarity: c.similarity, source: c.source }))`
+    - Sends `res.json({ answer, mode: "rag", sources });`
+    - Catches errors:
+      - If the message mentions Ollama (e.g. `Ollama generate failed`), returns `503` with a hint to start Ollama.
+      - Otherwise returns `500` with `error: err.message || "Failed to chat"`.
+  - **How it works:** The controller is a glue layer: validates the input, delegates all RAG work to `ragService.chatWithKnowledge`, and shapes the output for the frontend.
+
+### 15.3 Chunking: how text is physically split in this project
+
+- **Chunking implementation**
+  - **File:** `backend/services/chunking.js`
+  - **Exports:**
+    - `splitIntoChunks(text, { chunkSize = 600, overlap = 100 } = {})`
+      - Trims the text.
+      - Slides a window of `chunkSize` characters.
+      - Tries to break at the last newline or `. ` inside the window when that break point is at least half of the window; this keeps sentences intact.
+      - Stores the trimmed substring as one chunk.
+      - Advances `start` to `end - overlap` to create an overlap between consecutive chunks.
+      - Stops when `end` reaches the end of the string.
+    - `splitMarkdownIntoChunks(md, { chunkSize = 600, overlap = 100 } = {})`
+      - Trims markdown text.
+      - Splits by markdown `##` headers using regex `(?=^##\s)` to get logical sections.
+      - For each section:
+        - If its length ≤ `chunkSize`, uses it as a single chunk.
+        - Else, passes it to `splitIntoChunks` for further splitting.
+      - Filters out empty chunks.
+  - **How it is used:**
+    - Knowledge ingestion: `ingestKnowledge.js` reads `.md` files and calls `splitMarkdownIntoChunks(content)`.
+    - Report ingestion: `reportIngestion.js` converts structured JSON reports into a big string with `reportToText(...)`, then calls `splitIntoChunks(text)` before storing.
+
+### 15.4 Embedding: how we turn text into vectors in this project
+
+- **Embedding implementation**
+  - **File:** `backend/services/vectorUtils.js`
+  - **Key constants:**
+    - `OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";`
+    - `EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "nomic-embed-text";`
+    - `EMBEDDING_DIM = 768;`
+  - **Function:** `async function getEmbedding(text)`
+    - Validates `text` is a non-empty string.
+    - Truncates text to `MAX_LENGTH = 8000` characters to fit Ollama’s context.
+    - Sends `POST ${OLLAMA_URL}/api/embeddings` with body:
+      - `{ model: EMBEDDING_MODEL, prompt: truncated }`.
+    - Checks `res.ok`; if false, throws with the response text.
+    - Parses JSON and expects `data.embedding` to be an array of length `EMBEDDING_DIM` (768).
+    - Returns that array of floats.
+  - **How it is used:**
+    - **At ingestion time** (`storeChunk` / `storeChunks`):
+      - When no explicit embedding is passed, `storeChunk` calls `getEmbedding(content)` to compute one vector per chunk.
+    - **At query time** (`ragService.chatWithKnowledge`):
+      - `const embedding = await getEmbedding(userQuery.trim());`
+      - That embedding is passed to `findSimilarChunks` for similarity search.
+
+### 15.5 Vector store: how embeddings are stored and searched
+
+- **Data model**
+  - **File:** `backend/prisma/schema.prisma` (plus migration `backend/prisma/migrations/20260222224100_add_pgvector/migration.sql`)
+  - **Relevant model:** `DocumentChunk`
+    - Columns include:
+      - `id` (UUID, primary key)
+      - `content` (TEXT)
+      - `embedding` (VECTOR(768)) — pgvector column
+      - `"sourceType"` (`"knowledge"` or `"report"`)
+      - `"scanId"` (nullable, for report chunks)
+      - `"reportId"` (nullable, for report chunks)
+      - `metadata` (JSONB)
+      - `createdAt` (timestamp)
+    - Migrations create a pgvector extension and an HNSW index on `embedding` with cosine similarity.
+
+- **Storing chunks with embeddings**
+  - **File:** `backend/services/vectorUtils.js`
+  - **Functions:**
+    - `embeddingToVectorLiteral(embedding)`:
+      - Turns `[f1, f2, ..., fn]` into the string `"[f1,f2,...,fn]"` so it can be used in raw SQL for pgvector.
+    - `async storeChunk({ content, sourceType, reportId, scanId, metadata, embedding })`
+      - Validates `content` and `sourceType`.
+      - Enforces that report chunks (`sourceType === "report"`) must have a `scanId` (security constraint).
+      - Uses existing `embedding` or calls `getEmbedding(content)` to compute it.
+      - Builds the vector literal string.
+      - Generates a new UUID.
+      - Stringifies `metadata` to JSON.
+      - Runs a raw SQL `INSERT` into `"DocumentChunk"` using `prisma.$executeRawUnsafe` with:
+        - `id, content, embedding::vector, "sourceType", "reportId", "scanId", metadata::jsonb`.
+    - `async storeChunks(chunks)`
+      - Iterates over the array of chunk configs **sequentially**.
+      - Calls `storeChunk` for each and collects the returned IDs.
+      - Sequential processing is intentional to avoid memory or load spikes when embedding many chunks.
+
+- **Similarity search**
+  - **File:** `backend/services/vectorUtils.js`
+  - **Function:** `async findSimilarChunks(queryEmbedding, options = {})`
+    - Accepts:
+      - `queryEmbedding` (the user query embedding).
+      - Options: `{ limit = 5, minSimilarity = null, sourceType, scanId, reportId }`.
+    - Converts `queryEmbedding` to a pgvector string with `embeddingToVectorLiteral`.
+    - Dynamically builds `WHERE` filters:
+      - Optional filters on `"sourceType"`, `"scanId"`, `"reportId"`.
+      - Optional similarity threshold:
+        - `(1 - (embedding <=> $1::vector)) >= minSimilarity`.
+    - Executes raw SQL:
+      - `SELECT id, content, "sourceType", "reportId", "scanId", metadata, (embedding <=> $1::vector) AS distance, (1 - (embedding <=> $1::vector)) AS similarity FROM "DocumentChunk" WHERE ... ORDER BY embedding <=> $1::vector LIMIT $limit`.
+    - Returns rows with **both** distance and similarity values.
+  - **How it is used for the chatbot:**
+    - `ragService.chatWithKnowledge` calls:
+      - `findSimilarChunks(embedding, { sourceType: "knowledge", limit, minSimilarity })`
+    - This ensures the chatbot only searches general knowledge chunks, not per-scan report chunks.
+
+- **Deleting / counting report chunks**
+  - **File:** `backend/services/vectorUtils.js`
+  - `deleteChunksByScan(scanId)`:
+    - Deletes all rows from `"DocumentChunk"` where `"scanId" = $1` and `"sourceType" = 'report'`.
+  - `getChunkStats(scanId)`:
+    - Returns count of report chunks for a given scan.
+  - **How it is used:** These are called from `reportIngestion.js` to keep per-scan report chunks in sync when new reports are saved.
+
+### 15.6 RAG orchestration: how embeddings + similarity search + LLM are combined
+
+- **RAG service**
+  - **File:** `backend/services/ragService.js`
+  - **Key constants:**
+    - `OLLAMA_URL` and `CHAT_MODEL` (e.g. `llama3.2`).
+    - `RETRIEVAL_LIMIT` from `RAG_RETRIEVAL_LIMIT` env (default 3).
+    - `SIMILARITY_THRESHOLD` parsed from `RAG_SIMILARITY_THRESHOLD` env (0–1) or `null` if unset.
+    - `SYSTEM_PROMPT` — a long string defining the assistant as a security analyst for SQLi/XSS/RFI/LFI with strict behavioral rules.
+
+- **Prompt building**
+  - **Function:** `buildPrompt(userQuery, contextChunks)`
+    - Maps each chunk to:
+      - `[Source: ${c.metadata?.source || "knowledge base"}]\n${c.content}`
+    - Joins them with `\n\n---\n\n`.
+    - Returns a single string:
+      - `Context:\n<chunks or "(No relevant context found.)">\n\nUser Message:\n<userQuery>\n\nAnswer:\n`
+    - **How it works:** This is the exact prompt text sent to the LLM (as `prompt`), while `SYSTEM_PROMPT` is sent as the `system` field to Ollama.
+
+- **Talking to Ollama**
+  - **Function:** `async generateWithOllama(prompt, systemPrompt = SYSTEM_PROMPT)`
+    - Sends `POST ${OLLAMA_URL}/api/generate` with JSON:
+      - `{ model: CHAT_MODEL, prompt, system: systemPrompt, stream: false }`.
+    - On non-OK, throws an error containing the response text.
+    - On success, parses JSON and returns `data.response?.trim() || ""`.
+
+- **Main RAG entry**
+  - **Function:** `async chatWithKnowledge(userQuery, options = {})`
+    - Validates `userQuery` (non-empty string).
+    - Determines `limit` and `minSimilarity` from options or env.
+    - Calls `getEmbedding(userQuery.trim())` to embed the question.
+    - Calls `findSimilarChunks(embedding, { sourceType: "knowledge", limit, ...(minSimilarity != null && { minSimilarity }) })`.
+    - Runs `buildPrompt(userQuery.trim(), chunks)` to generate the prompt.
+    - Calls `generateWithOllama(prompt)` to get the final answer string.
+    - Returns:
+      - `{ answer, chunks: chunks.map(c => ({ id: c.id, content: c.content, similarity: c.similarity, source: c.metadata?.source })) }`.
+  - **How it works end-to-end for one question:**
+    1. **Embedding:** Convert question to a 768-dim vector.
+    2. **Similarity search:** Use pgvector + HNSW index to get top‑k knowledge chunks by cosine similarity.
+    3. **Prompt:** Combine those chunks + user question into a single RAG-style prompt.
+    4. **LLM call:** Send prompt + system prompt to Ollama’s `/api/generate`.
+    5. **Result shaping:** Return the generated text and a slim view of the chunks for the UI to display as “sources”.
+
+### 15.7 Knowledge ingestion: how the chatbot’s knowledge is physically loaded
+
+- **Knowledge ingestion script**
+  - **File:** `backend/scripts/ingestKnowledge.js`
+  - **Process:**
+    1. Resolves `DOCS_DIR = backend/docs/security`.
+    2. Reads all `.md` files in that directory.
+    3. For each file:
+       - Reads its contents as UTF‑8.
+       - Calls `splitMarkdownIntoChunks(content)` to get multiple chunks.
+       - For each chunk, pushes an object into `allChunks`:
+         - `{ content: chunk, sourceType: "knowledge", scanId: null, reportId: null, metadata: { source: file, topic } }`.
+    4. After processing all files, calls `storeChunks(allChunks)` to:
+       - Sequentially embed each chunk via `getEmbedding`.
+       - Insert each chunk into `DocumentChunk` via `storeChunk`.
+  - **How it works in practice:**
+    - You run this script manually (or via npm script) after adding or updating docs.
+    - Every run **adds** more knowledge chunks; it does not delete old ones.
+    - The chatbot’s retrieval will then use these newly added chunks when answering.
+
+### 15.8 Report ingestion: how per-scan data becomes searchable
+
+- **Report ingestion service**
+  - **File:** `backend/services/reportIngestion.js`
+  - **Key parts:**
+    - `reportToText(details, type, severity)`:
+      - Walks through the structured report JSON (`details`).
+      - Builds a human-readable text including:
+        - Type, severity.
+        - Summary.
+        - Each vulnerability/finding with:
+          - Location (url/method/parameter),
+          - Business impact,
+          - Remediation,
+          - Technical evidence (dbms, injection techniques, payloads).
+      - Falls back to flattening any remaining JSON fields into lines if needed.
+    - `async ingestReportForScan({ scanId, reportId, type, severity, details })`:
+      - Validates `scanId`.
+      - Calls `reportToText(details, type, severity)` to get one large text block.
+      - If the text is too short, returns 0 (skip ingestion).
+      - Uses `splitIntoChunks(text)` to split the report text.
+      - Wraps each chunk as `{ content, sourceType: "report", scanId, reportId: reportId || null, metadata: { type: type || null, severity: severity || null } }`.
+      - Calls `deleteChunksByScan(scanId)` to remove any existing report chunks for this scan.
+      - Calls `storeChunks(chunks)` to embed and insert them.
+      - Returns the number of stored chunk IDs.
+  - **How it works with webhooks:**
+    - When n8n (or any scanner) finishes a scan, it calls `POST /api/report` with JSON `{ scanId, type, severity, details }`.
+    - `reportController.saveReport`:
+      - Validates `scanId`.
+      - Parses `details` correctly even if it’s a string or an array.
+      - Writes a new `Report` row via Prisma.
+      - Updates the corresponding `Scan` row to `status = "completed"`.
+      - Calls `ingestReportForScan(...)` to push that report’s text into `DocumentChunk` as `sourceType = "report"`.
+    - Now other parts of the system (future chat features, analysis tools) can `findSimilarChunks` with `{ scanId }` or `{ reportId }` to retrieve context tied to that specific scan.
+
+### 15.9 Summary: “everything” used to build the chatbot
+
+Putting all of this together, the concrete implementation path is:
+
+1. **Frontend (`Chat.jsx` + `api.js`)**
+   - Collects user input.
+   - Sends `POST /api/chat` with `{ message }`.
+   - Renders `{ answer, sources }` from the JSON response.
+2. **HTTP layer (`server.js` + `chatRoutes.js` + `chatController.js`)**
+   - Exposes `/api/chat`.
+   - Validates the request.
+   - Calls `ragService.chatWithKnowledge` and shapes the response.
+3. **RAG core (`ragService.js`)**
+   - Embeds the question (`getEmbedding`).
+   - Retrieves top‑k knowledge chunks (`findSimilarChunks`).
+   - Builds a prompt with those chunks + the question.
+   - Calls Ollama’s `/api/generate` with a strict security system prompt.
+4. **Chunking (`chunking.js`)**
+   - Splits long docs and report text into overlapping segments.
+5. **Embeddings + vector store (`vectorUtils.js` + `DocumentChunk` schema)**
+   - Uses Ollama’s embedding model (`nomic-embed-text`) to embed each chunk and each question.
+   - Stores embeddings in Postgres using pgvector and HNSW for fast cosine similarity search.
+6. **Knowledge/report ingestion (`ingestKnowledge.js` + `reportIngestion.js` + `reportController.js`)**
+   - Knowledge docs → markdown chunks → embeddings → `DocumentChunk` with `sourceType = "knowledge"`.
+   - Webhook reports → JSON → text → chunks → embeddings → `DocumentChunk` with `sourceType = "report"` and `scanId`.
+
+This is the **exact, code-level story** of how chunking, embedding, similarity search, and RAG are implemented to build the SecuScan chatbot in this repository.
