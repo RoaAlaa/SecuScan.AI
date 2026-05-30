@@ -1,16 +1,26 @@
 const prisma = require("../prismaClient");
 const { ingestReportForScan } = require("../services/reportIngestion");
 const { getReportForScan } = require("../services/reportService");
+const { extractReportsList, prepareReportsForDisplay } = require("../utils/reportUtils");
 
-/**
- * Save a report (e.g. from n8n when scan completes) and run RAG ingestion.
- * Body: { scanId, type, severity, details }
- */
+
 exports.saveReport = async (req, res) => {
   try {
-    let body = req.body;
+    const rawBody = req.body;
+    let body = rawBody;
     if (Array.isArray(body) && body.length > 0) {
-      body = body[0];
+      const nestedReports = extractReportsList(body);
+      if (nestedReports.length > 0) {
+        const vulnerabilities = prepareReportsForDisplay(body);
+        body = {
+          scanId: body[0]?.scanId ?? rawBody?.scanId,
+          type: "scan",
+          severity: vulnerabilities[0]?.severity?.toLowerCase() || "unknown",
+          details: { vulnerabilities, scan_status: "completed" },
+        };
+      } else {
+        body = body[0];
+      }
     }
     body = body || {};
     let { scanId, type, severity, details } = body;
@@ -29,20 +39,32 @@ exports.saveReport = async (req, res) => {
       }
     }
 
-    // details is optional; allow empty / no vulnerabilities
     if (details == null || typeof details !== "object") {
       details = {};
     }
     if (Array.isArray(details)) {
-      // n8n sometimes sends [{ scanId, details }] — take first element's details
       const first = details[0];
       details = first && typeof first === "object" && first.details != null
         ? (typeof first.details === "string" ? JSON.parse(first.details) : first.details)
         : {};
     }
-    // If report shape is sent at top level (scan_status, vulnerabilities), merge into details
     if (body.scan_status != null && details.scan_status == null) details = { ...details, scan_status: body.scan_status };
-    if (Array.isArray(body.vulnerabilities) && !Array.isArray(details.vulnerabilities)) details = { ...details, vulnerabilities: body.vulnerabilities };
+    if (Array.isArray(body.vulnerabilities) && !Array.isArray(details.vulnerabilities)) {
+      details = { ...details, vulnerabilities: prepareReportsForDisplay({ vulnerabilities: body.vulnerabilities }) };
+    }
+    if (Array.isArray(body.reports) && !Array.isArray(details.vulnerabilities)) {
+      details = {
+        ...details,
+        vulnerabilities: prepareReportsForDisplay({ reports: body.reports }),
+        scan_status: details.scan_status ?? body.scan_status ?? "completed",
+      };
+    }
+    if (Array.isArray(details.vulnerabilities)) {
+      details = {
+        ...details,
+        vulnerabilities: prepareReportsForDisplay({ vulnerabilities: details.vulnerabilities }),
+      };
+    }
 
     const scan = await prisma.scan.findUnique({
       where: { id: scanId },
@@ -76,7 +98,6 @@ exports.saveReport = async (req, res) => {
       });
     } catch (ingestErr) {
       console.error("Report ingestion (RAG) failed; report was saved:", ingestErr.message);
-      // Report is already saved; ingestion is best-effort (e.g. Ollama down)
     }
 
     res.status(201).json({

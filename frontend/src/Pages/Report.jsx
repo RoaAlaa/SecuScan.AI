@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { ShieldCheck, AlertTriangle } from "lucide-react";
 import { API_URL, getToken } from "../api/api";
+import VulnerabilityCard from "../Components/Report/VulnerabilityCard";
+import { getSeverityBadgeClass, prepareReportsForDisplay } from "../utils/reportUtils";
 
 export default function Report() {
   const { scanId } = useParams();
@@ -66,6 +68,17 @@ export default function Report() {
     };
   }, [scanId, accessToken, retryCount]);
 
+  const vulns = useMemo(
+    () => (report ? prepareReportsForDisplay(report) : []),
+    [report]
+  );
+  const isVulnerabilitiesFormat = report
+    ? Array.isArray(report.vulnerabilities) ||
+      Array.isArray(report.reports) ||
+      vulns.length > 0
+    : false;
+  const severityClass = getSeverityBadgeClass(report?.severity);
+
   if (isWaiting && !report) {
     return (
       <div className="flex flex-1 items-center justify-center py-16 px-6">
@@ -93,16 +106,6 @@ export default function Report() {
     );
   }
 
-  const vulns = report.vulnerabilities ?? [];
-  const isVulnerabilitiesFormat = Array.isArray(report.vulnerabilities);
-  const severityClass =
-    (report.severity || "").toLowerCase() === "critical"
-      ? "bg-red-500/20 text-red-400 border-red-500/50"
-      : (report.severity || "").toLowerCase() === "high"
-        ? "bg-orange-500/20 text-orange-400 border-orange-500/50"
-        : (report.severity || "").toLowerCase() === "unknown" || !report.severity
-          ? "bg-slate-500/20 text-slate-400 border-slate-500/50"
-          : "bg-amber-500/20 text-amber-400 border-amber-500/50";
   const hasSummary = typeof report.summary === "string" && report.summary.trim().length > 0;
   const hasLegacyFormat =
     !!report.scan_info ||
@@ -147,101 +150,9 @@ export default function Report() {
               <p className="text-gray-500 text-xs mt-1">The scan completed successfully with no findings.</p>
             </div>
           ) : (
-          <div className="space-y-6">
+          <div className="space-y-3">
             {vulns.map((v, idx) => (
-              <div key={idx} className="bg-slate-900/60 border border-slate-700 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm font-semibold text-white">{v.type || "Vulnerability"}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    (v.severity || "").toUpperCase() === "HIGH" || (v.severity || "").toUpperCase() === "CRITICAL" ? "bg-red-500/20 text-red-400" :
-                    (v.severity || "").toUpperCase() === "MEDIUM" ? "bg-orange-500/20 text-orange-400" :
-                    "bg-amber-500/20 text-amber-400"
-                  }`}>{v.severity || "—"}</span>
-                </div>
-                {v.summary && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Summary</p>
-                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.summary}</p>
-                  </div>
-                )}
-                {(v.attack_scenario != null && String(v.attack_scenario).trim() !== "") && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Attack Scenario</p>
-                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.attack_scenario}</p>
-                  </div>
-                )}
-                <div className="mb-3">
-                  <p className="text-gray-500 text-xs mb-1">Location</p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-gray-500">URL</span><p className="text-gray-300 break-all font-mono">{v.url ?? "—"}</p></div>
-                    <div><span className="text-gray-500">Method</span><p className="text-gray-300 font-mono">{v.method ?? "—"}</p></div>
-                    <div><span className="text-gray-500">Parameter</span><p className="text-gray-300">{v.parameter ?? "—"}</p></div>
-                  </div>
-                </div>
-                {(v.root_cause_analysis != null && String(v.root_cause_analysis).trim() !== "") && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Root Cause Analysis</p>
-                    <p className="text-gray-300 text-xs whitespace-pre-wrap">{v.root_cause_analysis}</p>
-                  </div>
-                )}
-                {(v.business_impact?.length > 0 || v.impact?.length > 0) && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Business impact</p>
-                    <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
-                      {(v.business_impact || v.impact || []).map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {v.remediation?.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Remediation</p>
-                    <ul className="list-disc ml-4 text-gray-300 text-xs space-y-0.5">
-                      {v.remediation.map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {(v.dbms || v.injection_techniques?.length > 0 || v.successful_payloads?.length > 0) && (
-                  <div className="mb-3">
-                    <p className="text-gray-500 text-xs mb-1">Technical evidence</p>
-                    <div className="space-y-2 text-xs">
-                      {v.dbms && <p><span className="text-gray-500">DBMS:</span> <span className="text-gray-300">{v.dbms}</span></p>}
-                      {v.injection_techniques?.length > 0 && (
-                        <div>
-                          <p className="text-gray-500 mb-0.5">Injection techniques</p>
-                          <ul className="list-disc ml-4 text-gray-300 space-y-0.5">
-                            {v.injection_techniques.map((t, i) => <li key={i}>{t}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {v.successful_payloads?.length > 0 && (
-                        <div>
-                          <p className="text-gray-500 mb-0.5">Successful payloads</p>
-                          <div className="space-y-1">
-                            {v.successful_payloads.map((p, i) => (
-                              <pre
-                                key={i}
-                                className="bg-slate-950 rounded p-2 text-gray-400 text-xs whitespace-pre-wrap break-all"
-                              >
-                                {p}
-                              </pre>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {v.evidence && typeof v.evidence === "object" && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    {v.evidence.sqlmap_confirmed && "SQLMap confirmed. "}
-                    {v.evidence.sql_error_detected && "SQL error detected."}
-                  </p>
-                )}
-              </div>
+              <VulnerabilityCard key={`${v.type || v.vulnerability}-${idx}`} item={v} defaultOpen={idx === 0} />
             ))}
           </div>
           )}

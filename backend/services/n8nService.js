@@ -1,11 +1,6 @@
 const axios = require("axios");
 
-/**
- * Triggers the n8n workflow webhook when a scan is started.
- * Sends scanId, targetUrl, callbackUrl so n8n can run the scan and POST results back.
- * If N8N_WEBHOOK_URL is not set, this no-ops (graceful degradation).
- */
-async function triggerScanWorkflow({ scanId, targetUrl, email }) {
+async function triggerScanWorkflow({ scanId, targetUrl, email, scans }) {
   const webhookUrl = (process.env.N8N_WEBHOOK_URL || "").trim();
   if (!webhookUrl) {
     console.log("[n8n] Skipped: N8N_WEBHOOK_URL not set");
@@ -17,8 +12,10 @@ async function triggerScanWorkflow({ scanId, targetUrl, email }) {
 
   const payload = {
     scanId,
+    url: targetUrl,
     targetUrl,
     callbackUrl,
+    scans: Array.isArray(scans) && scans.length > 0 ? scans : ["sqlmap", "sstimap", "ssrfmap", "lfi"],
     ...(email && { email }),
     httpRequest: {
       method: "GET",

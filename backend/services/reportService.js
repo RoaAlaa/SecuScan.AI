@@ -1,6 +1,7 @@
 const prisma = require("../prismaClient");
 const fs = require("fs");
 const path = require("path");
+const { normalizeReportItem, prepareReportsForDisplay, sortReports } = require("../utils/reportUtils");
 
 function getSampleReport() {
   try {
@@ -10,7 +11,7 @@ function getSampleReport() {
       return JSON.parse(data);
     }
   } catch (_) {
-    // ignore sample report errors
+  
   }
   return null;
 }
@@ -58,12 +59,31 @@ async function getReportForScan({ scanId, userId, token }) {
   if (scan.reports && scan.reports.length > 0) {
     const report = scan.reports[0];
 
-    const base =
-      report.details &&
-      typeof report.details === "object" &&
-      !Array.isArray(report.details)
-        ? report.details
-        : {};
+    let base = {};
+    if (Array.isArray(report.details)) {
+      if (report.details.length > 0 && Array.isArray(report.details[0]?.reports)) {
+        const sorted = prepareReportsForDisplay(report.details);
+        const normalizedFromArray = {
+          type: report.type,
+          severity: report.severity,
+          scan_status: "completed",
+          vulnerabilities: sorted,
+        };
+        if (sorted.length > 0) {
+          if (!normalizedFromArray.type || normalizedFromArray.type === "scan") {
+            normalizedFromArray.type = sorted[0].type;
+          }
+          if (!normalizedFromArray.severity || normalizedFromArray.severity === "unknown") {
+            normalizedFromArray.severity = sorted[0].severity;
+          }
+        }
+        return normalizedFromArray;
+      }
+      base =
+        report.details[0] && typeof report.details[0] === "object" ? report.details[0] : {};
+    } else if (report.details && typeof report.details === "object") {
+      base = report.details;
+    }
 
     const normalized = {
       ...base,
@@ -72,54 +92,26 @@ async function getReportForScan({ scanId, userId, token }) {
       scan_status: base.scan_status ?? undefined,
     };
 
-    // Normalize vulnerabilities: support new shape (summary, location, Attack Scenario, Root Cause Analysis, business_impact, technical_evidence) and legacy flat shape
     if (Array.isArray(normalized.vulnerabilities)) {
-      normalized.vulnerabilities = normalized.vulnerabilities.map((v) => {
-        const loc = v.location || {};
-        const te = v.technical_evidence || {};
-        const attackScenario = v["Attack Scenario"] ?? v.attack_scenario;
-        const rootCause = v["Root Cause Analysis"] ?? v.root_cause_analysis;
-        return {
-          type: v.type,
-          severity: (v.severity || "").toUpperCase() || undefined,
-          summary: v.summary,
-          attack_scenario: typeof attackScenario === "string" ? attackScenario : undefined,
-          root_cause_analysis: typeof rootCause === "string" ? rootCause : undefined,
-          url: loc.url ?? v.url,
-          method: loc.method ?? v.method,
-          parameter: loc.parameter ?? v.parameter,
-          business_impact: Array.isArray(v.business_impact) ? v.business_impact : (Array.isArray(v.impact) ? v.impact : undefined),
-          remediation: Array.isArray(v.remediation) ? v.remediation : undefined,
-          technical_evidence: v.technical_evidence,
-          dbms: te.dbms ?? v.dbms,
-          injection_techniques: Array.isArray(te.injection_techniques) ? te.injection_techniques : (Array.isArray(v.injection_techniques) ? v.injection_techniques : undefined),
-          successful_payloads: Array.isArray(te.successful_payloads) ? te.successful_payloads : (Array.isArray(v.successful_payloads) ? v.successful_payloads : undefined),
-          evidence: v.evidence ?? (Object.keys(te).length > 0 ? te : undefined),
-        };
-      });
+      normalized.vulnerabilities = sortReports(
+        normalized.vulnerabilities.map((v) => normalizeReportItem(v))
+      );
+    } else if (Array.isArray(normalized.reports)) {
+      normalized.vulnerabilities = prepareReportsForDisplay({ reports: normalized.reports });
     } else {
-      // No vulnerabilities array — details is a single finding (e.g. new n8n flat shape with location + technical_evidence)
       const loc = base.location || {};
       const te = base.technical_evidence || {};
       const attackScenario = base["Attack Scenario"] ?? base.attack_scenario;
       const rootCause = base["Root Cause Analysis"] ?? base.root_cause_analysis;
-      const single = {
+      const single = normalizeReportItem({
+        ...base,
         type: base.type || report.type,
-        severity: (base.severity || report.severity || "").toUpperCase() || undefined,
-        summary: base.summary,
-        attack_scenario: typeof attackScenario === "string" ? attackScenario : undefined,
-        root_cause_analysis: typeof rootCause === "string" ? rootCause : undefined,
-        url: loc.url ?? base.url,
-        method: loc.method ?? base.method,
-        parameter: loc.parameter ?? base.parameter,
-        dbms: te.dbms ?? base.dbms,
-        injection_techniques: Array.isArray(te.injection_techniques) ? te.injection_techniques : (Array.isArray(base.injection_techniques) ? base.injection_techniques : undefined),
-        successful_payloads: Array.isArray(te.successful_payloads) ? te.successful_payloads : (Array.isArray(base.successful_payloads) ? base.successful_payloads : undefined),
-        business_impact: Array.isArray(base.business_impact) ? base.business_impact : (Array.isArray(base.impact) ? base.impact : undefined),
-        remediation: Array.isArray(base.remediation) ? base.remediation : undefined,
+        severity: base.severity || report.severity,
+        attack_scenario: attackScenario,
+        root_cause_analysis: rootCause,
+        location: base.location,
         technical_evidence: base.technical_evidence,
-        evidence: base.evidence ?? (Object.keys(te).length > 0 ? te : undefined),
-      };
+      });
 
       const hasRealFinding =
         single.url ||
@@ -127,6 +119,9 @@ async function getReportForScan({ scanId, userId, token }) {
         single.parameter ||
         single.dbms ||
         single.summary ||
+        single.description ||
+        single.payload ||
+        (typeof single.evidence === "string" && single.evidence.trim()) ||
         (Array.isArray(single.injection_techniques) && single.injection_techniques.length > 0) ||
         (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
         (Array.isArray(single.business_impact) && single.business_impact.length > 0) ||
@@ -142,7 +137,6 @@ async function getReportForScan({ scanId, userId, token }) {
       }
     }
 
-    // Use first finding's type/severity for header when report-level are generic (e.g. "scan", "unknown")
     if (normalized.vulnerabilities && normalized.vulnerabilities.length > 0) {
       const first = normalized.vulnerabilities[0];
       if (first.type && (!normalized.type || normalized.type === "scan")) normalized.type = first.type;

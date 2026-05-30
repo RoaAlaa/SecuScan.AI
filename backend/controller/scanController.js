@@ -5,17 +5,25 @@ const {
   deleteScan,
 } = require("../services/scanService");
 const { triggerScanWorkflow } = require("../services/n8nService");
+const { normalizeScansInput } = require("../utils/reportUtils");
 
 exports.startScan = async (req, res) => {
   try {
-    const { targetUrl, email } = req.body;
+    const { targetUrl, url: urlField, email, scans } = req.body;
     const userId = req.userId || null;
 
-    if (!targetUrl || typeof targetUrl !== "string" || !targetUrl.trim()) {
+    const rawUrl = (typeof urlField === "string" && urlField.trim()) || targetUrl;
+    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
       return res.status(400).json({ error: "Target URL is required" });
     }
 
-    const url = targetUrl.trim();
+    const url = rawUrl.trim();
+    const normalizedScans = normalizeScansInput(scans);
+    if (normalizedScans === null) {
+      return res.status(400).json({
+        error: "Invalid scans. Use one or more of: sqlmap, sstimap, ssrfmap, lfi",
+      });
+    }
 
     if (!userId && (!email || typeof email !== "string" || !email.trim())) {
       return res.status(400).json({ error: "Email is required for guest scans" });
@@ -30,6 +38,7 @@ exports.startScan = async (req, res) => {
     triggerScanWorkflow({
       scanId: scan.id,
       targetUrl: url,
+      scans: normalizedScans,
       email: !userId && email ? email.trim() : null,
     }).catch(() => {});
 
