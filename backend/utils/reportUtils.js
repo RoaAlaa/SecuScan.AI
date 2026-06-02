@@ -47,8 +47,27 @@ function sortReports(reports) {
   });
 }
 
+function formatVulnerabilityLabel(name) {
+  if (name == null || String(name).trim() === "") return "Vulnerability";
+  let label = String(name).trim();
+  if (!/ssti/i.test(label)) return label;
+
+  label = label
+    .replace(/\s*[-–—|:]\s*remote\s+code\s+execution\s*/gi, "")
+    .replace(/\s*\(\s*remote\s+code\s+execution\s*\)\s*/gi, " ")
+    .replace(/\s+remote\s+code\s+execution\s*/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s*[-–—|:]\s*$/g, "")
+    .trim();
+
+  return label || "Vulnerability";
+}
+
 function normalizeReportItem(item) {
   if (!item || typeof item !== "object") return item;
+
+  const rawName = item.vulnerability || item.type;
+  const displayName = formatVulnerabilityLabel(rawName);
 
   const loc = item.location || {};
   const attackScenario = item["Attack Scenario"] ?? item.attack_scenario ?? item.steps_to_reproduce;
@@ -56,8 +75,8 @@ function normalizeReportItem(item) {
   const te = item.technical_evidence || {};
 
   return {
-    type: item.vulnerability || item.type,
-    vulnerability: item.vulnerability || item.type,
+    type: displayName,
+    vulnerability: displayName,
     severity: (item.severity || "").toUpperCase() || undefined,
     summary: item.summary ?? item.description,
     description: item.description ?? item.summary,

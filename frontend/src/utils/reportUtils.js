@@ -73,13 +73,33 @@ export function getSeverityBadgeClass(severity) {
   }
 }
 
+/** Strip redundant "Remote Code Execution" suffix from SSTI titles in the UI. */
+export function formatVulnerabilityLabel(name) {
+  if (name == null || String(name).trim() === "") return "Vulnerability";
+  let label = String(name).trim();
+  if (!/ssti/i.test(label)) return label;
+
+  label = label
+    .replace(/\s*[-–—|:]\s*remote\s+code\s+execution\s*/gi, "")
+    .replace(/\s*\(\s*remote\s+code\s+execution\s*\)\s*/gi, " ")
+    .replace(/\s+remote\s+code\s+execution\s*/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s*[-–—|:]\s*$/g, "")
+    .trim();
+
+  return label || "Vulnerability";
+}
+
 export function normalizeReportItem(item) {
   if (!item || typeof item !== "object") return item;
 
+  const rawName = item.vulnerability || item.type;
+  const displayName = formatVulnerabilityLabel(rawName);
+
   return {
     ...item,
-    type: item.vulnerability || item.type,
-    vulnerability: item.vulnerability || item.type,
+    type: displayName,
+    vulnerability: displayName,
     severity: (item.severity || "").toUpperCase() || undefined,
     summary: item.summary ?? item.description,
     description: item.description ?? item.summary,
@@ -99,4 +119,38 @@ export function prepareReportsForDisplay(data) {
   const raw = extractReportsList(data);
   const normalized = raw.map(normalizeReportItem);
   return sortReports(normalized);
+}
+
+export const SEVERITY_FILTER_OPTIONS = [
+  { value: "", label: "All severities" },
+  { value: "critical", label: "Critical" },
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+  { value: "info", label: "Info" },
+];
+
+export function getVulnerabilityLabel(item) {
+  return formatVulnerabilityLabel(item?.vulnerability || item?.type);
+}
+
+export function getUniqueVulnerabilityTypes(reports) {
+  if (!Array.isArray(reports)) return [];
+  const names = new Set();
+  for (const item of reports) {
+    const label = getVulnerabilityLabel(item);
+    if (label && label !== "Vulnerability") names.add(label);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+export function filterReports(reports, { severity = "", vulnerability = "" }) {
+  if (!Array.isArray(reports)) return [];
+  const sev = severity.trim().toLowerCase();
+  const vuln = vulnerability.trim().toLowerCase();
+  return reports.filter((item) => {
+    if (sev && (item.severity || "").toLowerCase() !== sev) return false;
+    if (vuln && getVulnerabilityLabel(item).toLowerCase() !== vuln) return false;
+    return true;
+  });
 }

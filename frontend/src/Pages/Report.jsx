@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { ShieldCheck, AlertTriangle } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { API_URL, getToken } from "../api/api";
 import VulnerabilityCard from "../Components/Report/VulnerabilityCard";
-import { getSeverityBadgeClass, prepareReportsForDisplay } from "../utils/reportUtils";
+import {
+  filterReports,
+  getUniqueVulnerabilityTypes,
+  prepareReportsForDisplay,
+  SEVERITY_FILTER_OPTIONS,
+} from "../utils/reportUtils";
 
 export default function Report() {
   const { scanId } = useParams();
@@ -13,6 +18,8 @@ export default function Report() {
   const [error, setError] = useState(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [filterSeverity, setFilterSeverity] = useState("");
+  const [filterVuln, setFilterVuln] = useState("");
 
   useEffect(() => {
     if (!scanId) return;
@@ -68,17 +75,20 @@ export default function Report() {
     };
   }, [scanId, accessToken, retryCount]);
 
-  const vulns = useMemo(
+  const allVulns = useMemo(
     () => (report ? prepareReportsForDisplay(report) : []),
     [report]
+  );
+  const vulnTypeOptions = useMemo(() => getUniqueVulnerabilityTypes(allVulns), [allVulns]);
+  const vulns = useMemo(
+    () => filterReports(allVulns, { severity: filterSeverity, vulnerability: filterVuln }),
+    [allVulns, filterSeverity, filterVuln]
   );
   const isVulnerabilitiesFormat = report
     ? Array.isArray(report.vulnerabilities) ||
       Array.isArray(report.reports) ||
       vulns.length > 0
     : false;
-  const severityClass = getSeverityBadgeClass(report?.severity);
-
   if (isWaiting && !report) {
     return (
       <div className="flex flex-1 items-center justify-center py-16 px-6">
@@ -118,7 +128,7 @@ export default function Report() {
     (Array.isArray(report.references) && report.references.length > 0);
 
   return (
-    <div className="py-8 px-6 max-w-4xl mx-auto">
+    <div className="w-full max-w-4xl mx-auto py-8 px-6">
       <div className="border-b border-slate-700 pb-6 mb-6">
         <div className="flex items-center gap-2 mb-2">
           <ShieldCheck size={20} className="text-blue-400" strokeWidth={1.5} />
@@ -126,33 +136,72 @@ export default function Report() {
         </div>
         <h1 className="text-xl font-bold text-white mb-2">Vulnerability Assessment Report</h1>
         <p className="text-xs text-gray-400 mb-4">Confidential — Findings and remediation guidance</p>
-        <div className="flex flex-wrap items-center gap-3">
-          {isVulnerabilitiesFormat && vulns.length > 0 && (report.type || report.severity) && (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${severityClass}`}>
-              <AlertTriangle size={12} />
-              {report.type || "Vulnerability"} — {report.severity || "N/A"}
-            </span>
-          )}
-          {report.scan_status && (
-            <span className="px-2.5 py-1 rounded border text-xs font-medium border-slate-600 text-gray-400">
-              {report.scan_status}
-            </span>
-          )}
-        </div>
       </div>
 
       {isVulnerabilitiesFormat && (
-        <section className="mb-6">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Findings ({vulns.length})</h2>
-          {vulns.length === 0 ? (
+        <section className="mb-6 w-full min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-3">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              Findings ({vulns.length}
+              {(filterSeverity || filterVuln) && allVulns.length !== vulns.length ? ` of ${allVulns.length}` : ""})
+            </h2>
+            {allVulns.length > 0 && (
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <label className="flex flex-col gap-1 min-w-[10rem]">
+                  <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Severity</span>
+                  <select
+                    value={filterSeverity}
+                    onChange={(e) => setFilterSeverity(e.target.value)}
+                    className="bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500/60"
+                  >
+                    {SEVERITY_FILTER_OPTIONS.map((opt) => (
+                      <option key={opt.value || "all"} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 min-w-[10rem]">
+                  <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Vulnerability</span>
+                  <select
+                    value={filterVuln}
+                    onChange={(e) => setFilterVuln(e.target.value)}
+                    className="bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500/60"
+                  >
+                    <option value="">All types</option>
+                    {vulnTypeOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+          {allVulns.length === 0 ? (
             <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-6 text-center">
               <p className="text-gray-300 text-sm">No vulnerabilities detected.</p>
-              <p className="text-gray-500 text-xs mt-1">The scan completed successfully with no findings.</p>
+              <p className="text-gray-500 text-xs mt-1">The scan finished with no findings.</p>
+            </div>
+          ) : vulns.length === 0 ? (
+            <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-6 text-center">
+              <p className="text-gray-300 text-sm">No findings match the current filters.</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterSeverity("");
+                  setFilterVuln("");
+                }}
+                className="text-blue-400 hover:text-blue-300 text-xs mt-2"
+              >
+                Clear filters
+              </button>
             </div>
           ) : (
-          <div className="space-y-3">
+          <div className="w-full min-w-0 space-y-3">
             {vulns.map((v, idx) => (
-              <VulnerabilityCard key={`${v.type || v.vulnerability}-${idx}`} item={v} defaultOpen={idx === 0} />
+              <VulnerabilityCard key={`${v.type || v.vulnerability}-${idx}`} item={v} />
             ))}
           </div>
           )}
