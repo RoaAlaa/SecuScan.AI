@@ -111,8 +111,8 @@ export default function Chat() {
         </h1>
         <p className="text-sm text-gray-400 mt-1">
           {reportMode
-            ? "Answering based on your selected scan report. Deselect the report for general vulnerability questions."
-            : "Ask about SQL injection, XSS, LFI, RFI, and other vulnerabilities. Answers are based on the knowledge base."}
+            ? "Answering using your selected scan report and the security knowledge base. Only security-related questions are allowed."
+            : "Ask about SQLi, SSTI, SSRF, path traversal, or broken access control. Answers are based on the knowledge base."}
         </p>
       </div>
 
@@ -127,12 +127,12 @@ export default function Chat() {
               <p className="text-gray-500 text-xs max-w-sm">
                 {reportMode ? (
                   <>
-                    e.g. &quot;Summarize the critical findings&quot; or &quot;What remediation do you
-                    recommend?&quot;
+                    e.g. &quot;Summarize the critical findings&quot; or &quot;How do I fix the SQLi
+                    finding?&quot;
                   </>
                 ) : (
                   <>
-                    e.g. &quot;How do I prevent SQL injection?&quot; or &quot;What is XSS?&quot;
+                    e.g. &quot;How do I prevent SQL injection?&quot; or &quot;What is SSRF?&quot;
                   </>
                 )}
               </p>
