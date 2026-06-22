@@ -13,6 +13,7 @@ import Report from "./Pages/Report";
 import Dashboard from "./Pages/Dashboard";
 import History from "./Pages/History";
 import Chat from "./Pages/Chat";
+import Profile from "./Pages/Profile";
 
 function App() {
   return (
@@ -22,7 +23,14 @@ function App() {
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
-          <Route path="scan" element={<Scan />} />
+          <Route
+            path="scan"
+            element={
+              <ProtectedRoute>
+                <Scan />
+              </ProtectedRoute>
+            }
+          />
           <Route path="loading" element={<Loading />} />
           <Route path="results" element={<Results />} />
           <Route path="report" element={<Navigate to="/" replace />} />
@@ -41,6 +49,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

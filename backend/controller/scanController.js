@@ -1,3 +1,4 @@
+const prisma = require("../prismaClient");
 const {
   createScan,
   listUserScans,
@@ -9,8 +10,8 @@ const { normalizeScansInput } = require("../utils/reportUtils");
 
 exports.startScan = async (req, res) => {
   try {
-    const { targetUrl, url: urlField, email, scans } = req.body;
-    const userId = req.userId || null;
+    const userId = req.userId;
+    const { targetUrl, url: urlField, scans } = req.body;
 
     const rawUrl = (typeof urlField === "string" && urlField.trim()) || targetUrl;
     if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
@@ -25,30 +26,31 @@ exports.startScan = async (req, res) => {
       });
     }
 
-    if (!userId && (!email || typeof email !== "string" || !email.trim())) {
-      return res.status(400).json({ error: "Email is required for guest scans" });
+    const account = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+    if (!account) {
+      return res.status(401).json({ error: "User account not found" });
     }
 
-    const { scan, accessToken, reportWillBeSentTo } = await createScan({
+    const { scan } = await createScan({
       targetUrl: url,
       userId,
-      email: !userId && email ? email.trim() : null,
+      email: null,
     });
 
     triggerScanWorkflow({
       scanId: scan.id,
       targetUrl: url,
       scans: normalizedScans,
-      email: !userId && email ? email.trim() : null,
+      email: account.email,
     }).catch(() => {});
 
     res.status(201).json({
       scanId: scan.id,
-      message: "Scan started. The report will be sent to your email when finished.",
-      reportWillBeSentTo: reportWillBeSentTo || (req.user && req.user.email) || null,
-      reportLink: accessToken
-        ? `${process.env.FRONTEND_URL || "http://localhost:5173"}/report/${scan.id}?token=${accessToken}`
-        : null,
+      message: "Scan started. The report will be sent to your account email when finished.",
+      reportWillBeSentTo: account.email,
     });
   } catch (err) {
     console.error(err);

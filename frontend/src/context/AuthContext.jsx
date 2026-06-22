@@ -50,8 +50,14 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("secuscan_token");
   }, []);
 
+  const updateUser = useCallback((updatedUser) => {
+    if (!updatedUser?.email) return;
+    localStorage.setItem(AUTH_KEY, JSON.stringify(updatedUser));
+    setUser(updatedUser);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

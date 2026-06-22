@@ -1,6 +1,7 @@
 const prisma = require("../prismaClient");
 const { ingestReportForScan } = require("../services/reportIngestion");
 const { getReportForScan } = require("../services/reportService");
+const { notifyScanComplete } = require("../services/scanNotificationService");
 const { extractReportsList, prepareReportsForDisplay } = require("../utils/reportUtils");
 
 
@@ -85,6 +86,10 @@ exports.saveReport = async (req, res) => {
     await prisma.scan.update({
       where: { id: scanId },
       data: { status: "completed", finishedAt: new Date() },
+    });
+
+    notifyScanComplete(scanId).catch((err) => {
+      console.error("[email] Scan-complete notification failed; report was saved:", err.message);
     });
 
     let chunkCount = 0;

@@ -1,15 +1,10 @@
-import { Link, useNavigate } from "react-router-dom";
-import { ShieldCheck, LogOut, History, MessageCircle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ShieldCheck, History, MessageCircle } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import UserMenu from "./UserMenu";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    logout();
-    navigate("/");
-  };
+  const { user } = useAuth();
 
   return (
     <nav className="flex items-center justify-between px-6 md:px-10 py-3 border-b border-slate-800/50 bg-slate-950/30 shrink-0">
@@ -34,14 +29,7 @@ export default function Navbar() {
               <MessageCircle size={14} className="shrink-0" />
               Chat
             </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition flex items-center gap-1"
-            >
-              <LogOut size={14} />
-              Logout
-            </button>
+            <UserMenu />
           </>
         ) : (
           <>

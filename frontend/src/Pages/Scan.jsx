@@ -9,7 +9,6 @@ export default function Scan() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [url, setUrl] = useState("");
-  const [email, setEmail] = useState("");
   const [selectedScans, setSelectedScans] = useState([]);
   const [fullScan, setFullScan] = useState(false);
   const [error, setError] = useState("");
@@ -44,16 +43,10 @@ export default function Scan() {
 
     setLoading(true);
     try {
-      const body = {
-        url: url.trim(),
-        scans,
-        ...(user ? {} : { email: email.trim() }),
-      };
-      const data = await api("POST", "/api/scans", body);
+      const data = await api("POST", "/api/scans", { url: url.trim(), scans });
       setSubmitted({
         scanId: data.scanId,
-        reportWillBeSentTo: data.reportWillBeSentTo,
-        reportLink: data.reportLink,
+        reportWillBeSentTo: data.reportWillBeSentTo || user?.email,
       });
     } catch (err) {
       setError(err.message || "Failed to start scan");
@@ -70,33 +63,18 @@ export default function Scan() {
           <div className="bg-slate-900/70 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 w-full">
             <h2 className="text-lg font-bold text-white mb-3">Scan started</h2>
             <p className="text-gray-400 text-sm mb-4">
-              The scan may take a few minutes. When it finishes, the report will be sent to{" "}
-              <span className="text-blue-400">
-                {submitted.reportWillBeSentTo || "your email"}
-              </span>
-              .
+              When the scan finishes, the report will be emailed to your account at{" "}
+              <span className="text-blue-400">{submitted.reportWillBeSentTo}</span>.
             </p>
-            {user ? (
-              <p className="text-gray-400 text-sm mb-4">
-                The report will also be added to your <strong className="text-gray-300">History</strong> so you can open it from your dashboard.
-              </p>
-            ) : (
-              <p className="text-gray-400 text-sm mb-4">
-                You can only access the report from the link in that email.
-              </p>
-            )}
-            {submitted.reportLink && (
-              <p className="text-xs text-gray-500 mb-4 break-all">
-                Save this link to open the report later: {submitted.reportLink}
-              </p>
-            )}
-            <div className="flex gap-3">
+            <p className="text-gray-400 text-sm mb-4">
+              It will also appear in your <strong className="text-gray-300">History</strong>.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setSubmitted(null);
                   setUrl("");
-                  setEmail("");
                   setSelectedScans([]);
                   setFullScan(false);
                 }}
@@ -104,15 +82,20 @@ export default function Scan() {
               >
                 New scan
               </button>
-              {user && (
-                <button
-                  type="button"
-                  onClick={() => navigate("/")}
-                  className="flex-1 py-2.5 rounded-lg font-semibold text-sm bg-blue-600 hover:bg-blue-700 text-white transition"
-                >
-                  Go to Dashboard
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => navigate(`/report/${submitted.scanId}`)}
+                className="flex-1 py-2.5 rounded-lg font-semibold text-sm bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 transition"
+              >
+                View report status
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/history")}
+                className="flex-1 py-2.5 rounded-lg font-semibold text-sm bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Go to History
+              </button>
             </div>
           </div>
         </div>
@@ -126,26 +109,14 @@ export default function Scan() {
         <BrandingCard />
         <form onSubmit={handleSubmit} className="bg-slate-900/70 backdrop-blur-xl border border-slate-800 rounded-2xl p-6 w-full">
           <h1 className="text-lg font-bold text-white mb-1">Security Scan</h1>
-          <p className="text-gray-400 text-xs mb-4">Enter a URL to scan for vulnerabilities.</p>
+          <p className="text-gray-400 text-xs mb-4">
+            Signed in as <span className="text-blue-400">{user?.email}</span>. The report will be sent to this email.
+          </p>
 
           {error && (
             <p className="text-sm text-red-400 bg-red-900/20 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
               {error}
             </p>
-          )}
-
-          {!user && (
-            <div className="mb-4">
-              <label className="block text-xs text-gray-400 mb-1">Your email (report will be sent here)</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              />
-            </div>
           )}
 
           <div className="mb-4">

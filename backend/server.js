@@ -31,11 +31,13 @@ app.get("/test-db", async (req, res) => {
 });
 
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
 const scanRoutes = require("./routes/scanRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/scans", scanRoutes);
 app.use("/api/report", reportRoutes);
 app.use("/api/chat", chatRoutes);
@@ -46,6 +48,11 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
+const { isEmailConfigured } = require("./services/emailService");
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  if (!isEmailConfigured()) {
+    console.log("[email] SMTP not configured — scan-complete emails will NOT be sent. Set SMTP_HOST in backend/.env");
+  }
 });
