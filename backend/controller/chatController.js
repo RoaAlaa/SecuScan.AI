@@ -4,7 +4,7 @@ const { chat } = require("../services/ragService");
 /**
  * POST /api/chat
  * Body: { message: string, scanId?: string }
- * RAG chatbot: knowledge base by default, or scan report + knowledge base when scanId is provided.
+ * RAG chatbot: knowledge base by default, or a selected scan report when scanId is provided.
  */
 exports.chat = async (req, res) => {
   try {

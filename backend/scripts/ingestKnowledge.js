@@ -11,7 +11,6 @@ const path = require("path");
 const fs = require("fs");
 const { splitMarkdownIntoChunks } = require("../services/chunking");
 const { storeChunks } = require("../services/vectorUtils");
-const prisma = require("../prismaClient");
 
 const DOCS_DIR = path.join(__dirname, "..", "docs", "security");
 
@@ -49,11 +48,6 @@ async function main() {
   }
 
   console.log("Storing", allChunks.length, "knowledge chunks (embedding via Ollama, sequential)...");
-
-  const deleted = await prisma.$executeRawUnsafe(
-    `DELETE FROM "DocumentChunk" WHERE "sourceType" = 'knowledge'`
-  );
-  console.log("  Cleared", deleted, "existing knowledge chunk(s).");
 
   const ids = await storeChunks(allChunks);
   console.log("Done. Stored", ids.length, "chunks.");
