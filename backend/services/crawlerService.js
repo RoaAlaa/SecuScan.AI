@@ -32,15 +32,34 @@ function buildCrawlerPrompt({ targetUrl, crawlMode, credentials = {} }) {
 }
 
 function extractCrawlOutput(responseData) {
+  if (typeof responseData === "string") {
+    return responseData.trim() || null;
+  }
+
   if (Array.isArray(responseData) && responseData.length > 0) {
-    const output = responseData[0]?.output;
-    if (typeof output === "string" && output.trim()) {
-      return output;
+    const first = responseData[0];
+    if (typeof first === "string" && first.trim()) {
+      return first.trim();
+    }
+    if (first && typeof first === "object") {
+      const output = first.output ?? first.message ?? first.text;
+      if (typeof output === "string" && output.trim()) {
+        return output.trim();
+      }
+      if (Array.isArray(first.pages) && first.pages.length > 0) {
+        return first.pages.map((page) => (typeof page === "string" ? page : JSON.stringify(page))).join("\n");
+      }
     }
   }
 
-  if (responseData && typeof responseData === "object" && typeof responseData.output === "string") {
-    return responseData.output;
+  if (responseData && typeof responseData === "object") {
+    const output = responseData.output ?? responseData.message ?? responseData.text;
+    if (typeof output === "string" && output.trim()) {
+      return output.trim();
+    }
+    if (Array.isArray(responseData.pages) && responseData.pages.length > 0) {
+      return responseData.pages.map((page) => (typeof page === "string" ? page : JSON.stringify(page))).join("\n");
+    }
   }
 
   return null;
@@ -58,7 +77,7 @@ async function runCrawler({ scanId, targetUrl, crawlMode, credentials }) {
   try {
     const response = await axios.post(
       webhookUrl,
-      { scanId, prompt, targetUrl, crawlMode },
+      { scanId, prompt, targetUrl, crawlMode, responseFormat: "text" },
       {
         headers: { "Content-Type": "application/json" },
         timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,

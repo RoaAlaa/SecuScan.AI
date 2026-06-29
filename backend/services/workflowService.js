@@ -30,6 +30,7 @@ async function triggerVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
   const payload = {
     scanId,
     crawlOutput,
+    crawlerMessage: crawlOutput,
   };
 
   const scanner = getScannerForVulnerability(vulnerabilityKey);
