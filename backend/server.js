@@ -49,10 +49,25 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 5001;
 
 const { isEmailConfigured } = require("./services/emailService");
+const {
+  getCrawlerWebhookUrl,
+  getVulnerabilityWebhookMap,
+} = require("./config/workflowConfig");
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   if (!isEmailConfigured()) {
     console.log("[email] SMTP not configured — scan-complete emails will NOT be sent. Set SMTP_HOST in backend/.env");
+  }
+  const crawlerUrl = getCrawlerWebhookUrl();
+  if (!crawlerUrl) {
+    console.warn("[config] CRAWLER_WEBHOOK_URL is missing — scans will save to DB but the crawler will never run.");
+  } else {
+    console.log("[config] Crawler webhook:", crawlerUrl);
+  }
+  const vulnMap = getVulnerabilityWebhookMap();
+  const missingVuln = Object.entries(vulnMap).filter(([, url]) => !url).map(([key]) => key);
+  if (missingVuln.length > 0) {
+    console.warn(`[config] Missing vulnerability webhooks: ${missingVuln.join(", ")}`);
   }
 });
