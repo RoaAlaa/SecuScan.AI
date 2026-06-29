@@ -10,11 +10,12 @@ async function createScan({ targetUrl, userId, email, crawlMode, selectedVulnera
     data: {
       targetUrl,
       status: "pending",
-      userId: userId || null,
-      crawlMode: crawlMode ?? null,
-      selectedVulnerabilities: selectedVulnerabilities ?? null,
+      user: userId ? { connect: { id: userId } } : undefined,
+      crawlMode: crawlMode ?? undefined,
+      selectedVulnerabilities: selectedVulnerabilities ?? [],
     },
   });
+
 
   let accessToken = null;
   let reportWillBeSentTo = null;

@@ -49,7 +49,7 @@ export default function Report() {
                 if (!cancelled) {
                   setRetryCount((c) => c + 1);
                 }
-              }, 5000);
+              }, 5001);
             } else {
               setIsWaiting(false);
             }
