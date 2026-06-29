@@ -1,7 +1,15 @@
 const prisma = require("../prismaClient");
 const fs = require("fs");
 const path = require("path");
-const { normalizeReportItem, prepareReportsForDisplay, sortReports } = require("../utils/reportUtils");
+const { ingestReportForScan } = require("./reportIngestion");
+const { notifyScanComplete } = require("./scanNotificationService");
+const {
+  normalizeReportItem,
+  prepareReportsForDisplay,
+  sortReports,
+  getHighestSeverity,
+} = require("../utils/reportUtils");
+const { resolveVulnerabilityKey } = require("../config/workflowConfig");
 
 function getSampleReport() {
   try {
@@ -11,9 +19,160 @@ function getSampleReport() {
       return JSON.parse(data);
     }
   } catch (_) {
-  
+    // ignore
   }
   return null;
+}
+
+function isCrawlerReport(report) {
+  return report.type === "crawler";
+}
+
+function extractFindingsFromReport(report) {
+  if (!report?.details || typeof report.details !== "object") return [];
+
+  const details = report.details;
+  if (Array.isArray(details.vulnerabilities)) {
+    return details.vulnerabilities;
+  }
+  if (Array.isArray(details.findings)) {
+    return details.findings;
+  }
+  return [];
+}
+
+async function saveCrawlerReport({ scanId, crawlOutput }) {
+  return prisma.report.create({
+    data: {
+      scanId,
+      type: "crawler",
+      severity: "info",
+      details: { crawlOutput, scan_status: "completed" },
+    },
+  });
+}
+
+async function saveWorkflowReport({
+  scanId,
+  vulnerabilityKey,
+  scanner,
+  status,
+  findings,
+  totalFound,
+  errorMessage,
+}) {
+  const resolvedKey = resolveVulnerabilityKey(vulnerabilityKey) || resolveVulnerabilityKey(scanner);
+  const reportType = resolvedKey || (typeof scanner === "string" ? scanner.toLowerCase() : "scan");
+  const normalizedFindings = Array.isArray(findings) ? findings : [];
+  const severity = getHighestSeverity(normalizedFindings) || (status === "FAILED" ? "unknown" : "info");
+
+  const report = await prisma.report.create({
+    data: {
+      scanId,
+      type: reportType,
+      severity,
+      details: {
+        scanner: scanner || reportType.toUpperCase(),
+        status: status || "COMPLETE",
+        total_found: totalFound ?? normalizedFindings.length,
+        vulnerabilities: normalizedFindings,
+        scan_status: status === "FAILED" ? "failed" : "completed",
+        ...(errorMessage ? { errorMessage } : {}),
+      },
+    },
+  });
+
+  if (resolvedKey) {
+    await prisma.workflowRun.updateMany({
+      where: { scanId, vulnerability: resolvedKey },
+      data: {
+        status: status === "FAILED" ? "failed" : "completed",
+        finishedAt: new Date(),
+        errorMessage: errorMessage || null,
+      },
+    });
+  }
+
+  return report;
+}
+
+async function checkAndCompleteScan(scanId) {
+  const scan = await prisma.scan.findUnique({
+    where: { id: scanId },
+    include: { workflowRuns: true, reports: true },
+  });
+
+  if (!scan || scan.status === "completed" || scan.status === "failed") {
+    return false;
+  }
+
+  const runs = scan.workflowRuns;
+  if (runs.length === 0) {
+    return false;
+  }
+
+  const allFinished = runs.every((run) => run.status === "completed" || run.status === "failed");
+  if (!allFinished) {
+    return false;
+  }
+
+  const allFailed = runs.every((run) => run.status === "failed");
+  const finalStatus = allFailed ? "failed" : "completed";
+
+  await prisma.scan.update({
+    where: { id: scanId },
+    data: { status: finalStatus, finishedAt: new Date() },
+  });
+
+  if (finalStatus === "completed") {
+    notifyScanComplete(scanId).catch((err) => {
+      console.error("[email] Scan-complete notification failed:", err.message);
+    });
+
+    try {
+      const merged = await buildMergedReportPayload(scanId);
+      const vulnerabilityReports = scan.reports.filter((r) => !isCrawlerReport(r));
+      const latestReport = vulnerabilityReports[vulnerabilityReports.length - 1];
+
+      if (latestReport && merged.vulnerabilities?.length > 0) {
+        await ingestReportForScan({
+          scanId,
+          reportId: latestReport.id,
+          type: "scan",
+          severity: merged.severity,
+          details: merged,
+        });
+      }
+    } catch (ingestErr) {
+      console.error("Report ingestion (RAG) failed on scan completion:", ingestErr.message);
+    }
+  }
+
+  return true;
+}
+
+async function buildMergedReportPayload(scanId) {
+  const reports = await prisma.report.findMany({
+    where: { scanId },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const vulnerabilityReports = reports.filter((r) => !isCrawlerReport(r));
+  const allFindings = [];
+
+  for (const report of vulnerabilityReports) {
+    allFindings.push(...extractFindingsFromReport(report));
+  }
+
+  const vulnerabilities = sortReports(allFindings.map((f) => normalizeReportItem(f)));
+  const severity = getHighestSeverity(vulnerabilities) || "unknown";
+
+  return {
+    type: "scan",
+    severity,
+    scan_status: "completed",
+    vulnerabilities,
+  };
 }
 
 async function getReportForScan({ scanId, userId, token }) {
@@ -25,7 +184,7 @@ async function getReportForScan({ scanId, userId, token }) {
 
   const scan = await prisma.scan.findUnique({
     where: { id: scanId },
-    include: { reports: { orderBy: { createdAt: "desc" }, take: 1 } },
+    include: { reports: { orderBy: { createdAt: "asc" } } },
   });
 
   if (!scan) {
@@ -56,94 +215,36 @@ async function getReportForScan({ scanId, userId, token }) {
     throw error;
   }
 
-  if (scan.reports && scan.reports.length > 0) {
-    const report = scan.reports[0];
+  const vulnerabilityReports = (scan.reports || []).filter((r) => !isCrawlerReport(r));
 
+  if (vulnerabilityReports.length > 0) {
+    const merged = await buildMergedReportPayload(scanId);
+
+    if (merged.vulnerabilities.length > 0) {
+      return merged;
+    }
+
+    const latest = vulnerabilityReports[vulnerabilityReports.length - 1];
     let base = {};
-    if (Array.isArray(report.details)) {
-      if (report.details.length > 0 && Array.isArray(report.details[0]?.reports)) {
-        const sorted = prepareReportsForDisplay(report.details);
-        const normalizedFromArray = {
-          type: report.type,
-          severity: report.severity,
-          scan_status: "completed",
-          vulnerabilities: sorted,
-        };
-        if (sorted.length > 0) {
-          if (!normalizedFromArray.type || normalizedFromArray.type === "scan") {
-            normalizedFromArray.type = sorted[0].type;
-          }
-          if (!normalizedFromArray.severity || normalizedFromArray.severity === "unknown") {
-            normalizedFromArray.severity = sorted[0].severity;
-          }
-        }
-        return normalizedFromArray;
-      }
-      base =
-        report.details[0] && typeof report.details[0] === "object" ? report.details[0] : {};
-    } else if (report.details && typeof report.details === "object") {
-      base = report.details;
+    if (latest.details && typeof latest.details === "object") {
+      base = latest.details;
     }
 
     const normalized = {
       ...base,
-      type: report.type,
-      severity: report.severity,
-      scan_status: base.scan_status ?? undefined,
+      type: latest.type,
+      severity: latest.severity,
+      scan_status: base.scan_status ?? (scan.status === "failed" ? "failed" : "completed"),
+      vulnerabilities: [],
     };
 
-    if (Array.isArray(normalized.vulnerabilities)) {
-      normalized.vulnerabilities = sortReports(
-        normalized.vulnerabilities.map((v) => normalizeReportItem(v))
-      );
-    } else if (Array.isArray(normalized.reports)) {
-      normalized.vulnerabilities = prepareReportsForDisplay({ reports: normalized.reports });
-    } else {
-      const loc = base.location || {};
-      const te = base.technical_evidence || {};
-      const attackScenario = base["Attack Scenario"] ?? base.attack_scenario;
-      const rootCause = base["Root Cause Analysis"] ?? base.root_cause_analysis;
-      const single = normalizeReportItem({
-        ...base,
-        type: base.type || report.type,
-        severity: base.severity || report.severity,
-        attack_scenario: attackScenario,
-        root_cause_analysis: rootCause,
-        location: base.location,
-        technical_evidence: base.technical_evidence,
-      });
-
-      const hasRealFinding =
-        single.url ||
-        single.method ||
-        single.parameter ||
-        single.dbms ||
-        single.summary ||
-        single.description ||
-        single.payload ||
-        (typeof single.evidence === "string" && single.evidence.trim()) ||
-        (Array.isArray(single.injection_techniques) && single.injection_techniques.length > 0) ||
-        (Array.isArray(single.successful_payloads) && single.successful_payloads.length > 0) ||
-        (Array.isArray(single.business_impact) && single.business_impact.length > 0) ||
-        (Array.isArray(single.remediation) && single.remediation.length > 0) ||
-        (single.evidence && typeof single.evidence === "object" && Object.keys(single.evidence).length > 0) ||
-        (single.type && single.type !== "scan") ||
-        (single.severity && (single.severity || "").toUpperCase() !== "UNKNOWN");
-
-      if (hasRealFinding) {
-        normalized.vulnerabilities = [single];
-      } else {
-        normalized.vulnerabilities = [];
-      }
-    }
-
-    if (normalized.vulnerabilities && normalized.vulnerabilities.length > 0) {
-      const first = normalized.vulnerabilities[0];
-      if (first.type && (!normalized.type || normalized.type === "scan")) normalized.type = first.type;
-      if (first.severity && (!normalized.severity || normalized.severity === "unknown")) normalized.severity = first.severity;
-    }
-
     return normalized;
+  }
+
+  if (scan.status === "running" || scan.status === "pending") {
+    const error = new Error("Report not ready yet");
+    error.statusCode = 404;
+    throw error;
   }
 
   const sample = getSampleReport();
@@ -157,5 +258,9 @@ async function getReportForScan({ scanId, userId, token }) {
 }
 
 module.exports = {
+  saveCrawlerReport,
+  saveWorkflowReport,
+  checkAndCompleteScan,
+  buildMergedReportPayload,
   getReportForScan,
 };

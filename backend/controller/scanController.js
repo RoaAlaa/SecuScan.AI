@@ -5,13 +5,13 @@ const {
   listPendingScans,
   deleteScan,
 } = require("../services/scanService");
-const { triggerScanWorkflow } = require("../services/n8nService");
-const { normalizeScansInput } = require("../utils/reportUtils");
+const { orchestrateScan } = require("../services/scanOrchestrator");
+const { normalizeScansInput, normalizeCrawlMode } = require("../utils/reportUtils");
 
 exports.startScan = async (req, res) => {
   try {
     const userId = req.userId;
-    const { targetUrl, url: urlField, scans } = req.body;
+    const { targetUrl, url: urlField, scans, vulnerabilities, crawlMode, credentials } = req.body;
 
     const rawUrl = (typeof urlField === "string" && urlField.trim()) || targetUrl;
     if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
@@ -19,12 +19,15 @@ exports.startScan = async (req, res) => {
     }
 
     const url = rawUrl.trim();
-    const normalizedScans = normalizeScansInput(scans);
+    const scanSelection = vulnerabilities ?? scans;
+    const normalizedScans = normalizeScansInput(scanSelection);
     if (normalizedScans === null) {
       return res.status(400).json({
-        error: "Invalid scans. Use one or more of: sqlmap, sstimap, ssrfmap, lfi",
+        error: "Invalid vulnerabilities. Use one or more of: sqli, ssti, ssrf, bac, path_traversal",
       });
     }
+
+    const normalizedCrawlMode = normalizeCrawlMode(crawlMode);
 
     const account = await prisma.user.findUnique({
       where: { id: userId },
@@ -38,14 +41,19 @@ exports.startScan = async (req, res) => {
       targetUrl: url,
       userId,
       email: null,
+      crawlMode: normalizedCrawlMode,
+      selectedVulnerabilities: normalizedScans,
     });
 
-    triggerScanWorkflow({
+    orchestrateScan({
       scanId: scan.id,
       targetUrl: url,
-      scans: normalizedScans,
-      email: account.email,
-    }).catch(() => {});
+      crawlMode: normalizedCrawlMode,
+      credentials: credentials || {},
+      vulnerabilityKeys: normalizedScans,
+    }).catch((err) => {
+      console.error(`[scan] Orchestration error for ${scan.id}:`, err.message);
+    });
 
     res.status(201).json({
       scanId: scan.id,

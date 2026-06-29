@@ -5,12 +5,14 @@ function generateToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function createScan({ targetUrl, userId, email }) {
+async function createScan({ targetUrl, userId, email, crawlMode, selectedVulnerabilities }) {
   const scan = await prisma.scan.create({
     data: {
       targetUrl,
       status: "pending",
       userId: userId || null,
+      crawlMode: crawlMode ?? null,
+      selectedVulnerabilities: selectedVulnerabilities ?? null,
     },
   });
 
@@ -48,7 +50,10 @@ async function listUserScans(userId) {
 
 async function listPendingScans(userId) {
   return prisma.scan.findMany({
-    where: { userId, status: "pending" },
+    where: {
+      userId,
+      status: { in: ["pending", "running"] },
+    },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -71,6 +76,7 @@ async function deleteScan(scanId, userId) {
   }
   await deleteChunksByScan(scanId);
   await prisma.reportAccess.deleteMany({ where: { scanId } });
+  await prisma.workflowRun.deleteMany({ where: { scanId } });
   await prisma.report.deleteMany({ where: { scanId } });
   await prisma.scan.delete({ where: { id: scanId } });
 }
@@ -81,4 +87,3 @@ module.exports = {
   listPendingScans,
   deleteScan,
 };
-

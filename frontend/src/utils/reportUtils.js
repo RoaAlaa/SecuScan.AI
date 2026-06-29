@@ -7,13 +7,20 @@ const SEVERITY_WEIGHT = {
 };
 
 export const SCAN_TOOLS = [
-  { id: "sqlmap", label: "SQLMap" },
-  { id: "sstimap", label: "SSTIMap" },
-  { id: "ssrfmap", label: "SSRFMap" },
-  { id: "lfi", label: "LFI" },
+  { id: "sqli", label: "SQL Injection" },
+  { id: "ssti", label: "SSTI" },
+  { id: "ssrf", label: "SSRF" },
+  { id: "bac", label: "Broken Access Control" },
+  { id: "path_traversal", label: "Path Traversal" },
 ];
 
 export const FULL_SCAN_TOOLS = SCAN_TOOLS.map((t) => t.id);
+
+export const CRAWL_MODES = [
+  { value: 1, label: "Mode 1", description: "Basic crawl (target URL only)" },
+  { value: 2, label: "Mode 2", description: "Dual-user session crawl" },
+  { value: 3, label: "Mode 3", description: "Admin + dual-user session crawl" },
+];
 
 /**
  * Extract reports from n8n nested payload: [{ reports: [...] }]
@@ -31,6 +38,10 @@ export function extractReportsList(data) {
 
   if (Array.isArray(data.vulnerabilities)) {
     return data.vulnerabilities;
+  }
+
+  if (Array.isArray(data.findings)) {
+    return data.findings;
   }
 
   return [];
@@ -103,8 +114,8 @@ export function normalizeReportItem(item) {
     severity: (item.severity || "").toUpperCase() || undefined,
     summary: item.summary ?? item.description,
     description: item.description ?? item.summary,
-    attack_scenario: item.attack_scenario ?? item.steps_to_reproduce,
-    steps_to_reproduce: item.steps_to_reproduce ?? item.attack_scenario,
+    attack_scenario: item.attack_scenario ?? item.steps_to_reproduce ?? item.stepsToReproduce,
+    steps_to_reproduce: item.steps_to_reproduce ?? item.stepsToReproduce ?? item.attack_scenario,
     payload: item.payload,
     evidence: item.evidence,
     impact: item.impact,
