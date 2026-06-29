@@ -46,7 +46,7 @@ function extractCrawlOutput(responseData) {
   return null;
 }
 
-async function runCrawler({ targetUrl, crawlMode, credentials }) {
+async function runCrawler({ scanId, targetUrl, crawlMode, credentials }) {
   const webhookUrl = getCrawlerWebhookUrl();
   if (!webhookUrl) {
     throw new Error("CRAWLER_WEBHOOK_URL is not configured");
@@ -58,7 +58,7 @@ async function runCrawler({ targetUrl, crawlMode, credentials }) {
   try {
     const response = await axios.post(
       webhookUrl,
-      { prompt, targetUrl, crawlMode },
+      { scanId, prompt, targetUrl, crawlMode },
       {
         headers: { "Content-Type": "application/json" },
         timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,

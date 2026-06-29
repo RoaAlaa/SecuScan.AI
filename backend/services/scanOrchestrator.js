@@ -90,7 +90,7 @@ async function orchestrateScan({
       data: { status: "running" },
     });
 
-    const crawlOutput = await runCrawler({ targetUrl, crawlMode, credentials });
+    const crawlOutput = await runCrawler({ scanId, targetUrl, crawlMode, credentials });
 
     await prisma.scan.update({
       where: { id: scanId },
