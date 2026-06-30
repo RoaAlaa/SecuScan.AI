@@ -72,7 +72,7 @@ async function triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credential
   }
 
   const backendUrl = process.env.BACKEND_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 5001}`;
-  const callbackUrl = `${backendUrl.replace(/\/$/, "")}/api/crawl/output`;
+  const callbackUrl = `${backendUrl.replace(/\/$/, "")}/api/crawl/output?scanId=${encodeURIComponent(scanId)}`;
   const prompt = buildCrawlerPrompt({ targetUrl, crawlMode, credentials });
 
   console.log("[crawler] Triggering workflow:", webhookUrl);
@@ -80,7 +80,7 @@ async function triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credential
   try {
     await axios.post(
       webhookUrl,
-      { scanId, prompt, targetUrl, crawlMode, callbackUrl },
+      { prompt, targetUrl, crawlMode, callbackUrl },
       {
         headers: { "Content-Type": "application/json" },
         timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,

@@ -31,7 +31,9 @@ function normalizeCrawlOutput(input) {
 
 router.post("/output", async (req, res) => {
   try {
-    const { scanId, crawlOutput } = req.body;
+    const scanId = req.body.scanId || req.query.scanId;
+    const { crawlOutput } = req.body;
+
     if (!scanId) {
       return res.status(400).json({ error: "scanId is required" });
     }
