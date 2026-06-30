@@ -42,7 +42,12 @@ function extractCrawlOutput(responseData) {
       return first.trim();
     }
     if (first && typeof first === "object") {
-      const output = first.output ?? first.message ?? first.text ?? first.crawlerMessage;
+      const output =
+        first.crawlOutput ??
+        first.output ??
+        first.message ??
+        first.text ??
+        first.crawlerMessage;
       if (typeof output === "string" && output.trim()) {
         return output.trim();
       }
@@ -53,7 +58,12 @@ function extractCrawlOutput(responseData) {
   }
 
   if (responseData && typeof responseData === "object") {
-    const output = responseData.output ?? responseData.message ?? responseData.text ?? responseData.crawlerMessage;
+    const output =
+      responseData.crawlOutput ??
+      responseData.output ??
+      responseData.message ??
+      responseData.text ??
+      responseData.crawlerMessage;
     if (typeof output === "string" && output.trim()) {
       return output.trim();
     }
@@ -65,31 +75,33 @@ function extractCrawlOutput(responseData) {
   return null;
 }
 
-async function triggerCrawlerWorkflow({ callbackToken, targetUrl, crawlMode, credentials }) {
+async function triggerCrawlerWorkflow({ targetUrl, crawlMode, credentials }) {
   const webhookUrl = getCrawlerWebhookUrl();
   if (!webhookUrl) {
     throw new Error("CRAWLER_WEBHOOK_URL is not configured");
   }
 
-  const backendUrl = process.env.BACKEND_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 5001}`;
-  const callbackUrl = callbackToken
-    ? `${backendUrl.replace(/\/$/, "")}/api/crawl/output?token=${encodeURIComponent(callbackToken)}`
-    : `${backendUrl.replace(/\/$/, "")}/api/crawl/output`;
   const prompt = buildCrawlerPrompt({ targetUrl, crawlMode, credentials });
 
   console.log("[crawler] Triggering workflow:", webhookUrl);
 
   try {
-    await axios.post(
+    const response = await axios.post(
       webhookUrl,
-      { prompt, targetUrl, crawlMode, callbackUrl },
+      { prompt, targetUrl, crawlMode },
       {
         headers: { "Content-Type": "application/json" },
         timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,
       }
     );
 
-    console.log("[crawler] Crawler workflow triggered successfully");
+    const crawlOutput = extractCrawlOutput(response.data);
+    if (!crawlOutput) {
+      throw new Error("Crawler workflow returned no text output");
+    }
+
+    console.log("[crawler] Crawler workflow completed successfully");
+    return crawlOutput;
   } catch (err) {
     const message = err.response?.data?.message || err.message || "Crawler workflow failed";
     console.error("[crawler] Failed:", message);

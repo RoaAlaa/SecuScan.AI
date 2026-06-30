@@ -1,6 +1,7 @@
 const router = require("express").Router();
-const { handleCrawlerCallback } = require("../services/scanOrchestrator");
+const { continueAfterCrawl } = require("../services/scanOrchestrator");
 const { findScanByCallbackToken } = require("../services/scanService");
+const prisma = require("../prismaClient");
 
 function normalizeCrawlOutput(input) {
   if (typeof input === "string" && input.trim()) {
@@ -33,13 +34,15 @@ function normalizeCrawlOutput(input) {
 router.post("/output", async (req, res) => {
   try {
     const token = req.query.token || req.body.token;
-    const { crawlOutput } = req.body;
+    const { scanId, crawlOutput } = req.body;
 
-    if (!token) {
-      return res.status(400).json({ error: "callback token is required" });
+    let scan = null;
+    if (scanId) {
+      scan = await prisma.scan.findUnique({ where: { id: scanId } });
+    } else if (token) {
+      scan = await findScanByCallbackToken(token);
     }
 
-    const scan = await findScanByCallbackToken(token);
     if (!scan) {
       return res.status(404).json({ error: "Scan not found" });
     }
@@ -49,7 +52,7 @@ router.post("/output", async (req, res) => {
       return res.status(400).json({ error: "crawlOutput is required and must contain text or pages" });
     }
 
-    await handleCrawlerCallback({ scanId: scan.id, crawlOutput: normalizedOutput });
+    await continueAfterCrawl({ scanId: scan.id, crawlOutput: normalizedOutput });
 
     res.status(200).json({ message: "Crawler output received" });
   } catch (err) {
