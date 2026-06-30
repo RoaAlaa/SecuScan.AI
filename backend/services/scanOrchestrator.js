@@ -1,5 +1,6 @@
 const prisma = require("../prismaClient");
-const { runCrawler } = require("./crawlerService");
+const { triggerCrawlerWorkflow } = require("./crawlerService");
+const { getAllVulnerabilityKeys } = require("../config/workflowConfig");
 const { triggerVulnerabilityWorkflow } = require("./workflowService");
 const {
   saveCrawlerReport,
@@ -82,7 +83,6 @@ async function orchestrateScan({
   targetUrl,
   crawlMode,
   credentials,
-  vulnerabilityKeys,
 }) {
   try {
     await prisma.scan.update({
@@ -90,22 +90,7 @@ async function orchestrateScan({
       data: { status: "running" },
     });
 
-    const crawlOutput = await runCrawler({ scanId, targetUrl, crawlMode, credentials });
-
-    await prisma.scan.update({
-      where: { id: scanId },
-      data: { crawlOutput },
-    });
-
-    await saveCrawlerReport({ scanId, crawlOutput });
-
-    await createWorkflowRuns(scanId, vulnerabilityKeys);
-
-    await Promise.all(
-      vulnerabilityKeys.map((vulnerabilityKey) =>
-        executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerabilityKey })
-      )
-    );
+    await triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credentials });
   } catch (err) {
     console.error(`[orchestrator] Scan ${scanId} failed:`, err.message);
     await prisma.scan.update({
@@ -115,6 +100,41 @@ async function orchestrateScan({
   }
 }
 
+async function handleCrawlerCallback({ scanId, crawlOutput }) {
+  const scan = await prisma.scan.findUnique({
+    where: { id: scanId },
+  });
+
+  if (!scan) {
+    const error = new Error("Scan not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const vulnerabilityKeys = Array.isArray(scan.selectedVulnerabilities) && scan.selectedVulnerabilities.length > 0
+    ? scan.selectedVulnerabilities
+    : getAllVulnerabilityKeys();
+
+  await prisma.scan.update({
+    where: { id: scanId },
+    data: {
+      crawlOutput,
+      status: "running",
+    },
+  });
+
+  await saveCrawlerReport({ scanId, crawlOutput });
+
+  await createWorkflowRuns(scanId, vulnerabilityKeys);
+
+  await Promise.all(
+    vulnerabilityKeys.map((vulnerabilityKey) =>
+      executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerabilityKey })
+    )
+  );
+}
+
 module.exports = {
   orchestrateScan,
+  handleCrawlerCallback,
 };

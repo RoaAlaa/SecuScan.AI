@@ -42,7 +42,7 @@ function extractCrawlOutput(responseData) {
       return first.trim();
     }
     if (first && typeof first === "object") {
-      const output = first.output ?? first.message ?? first.text;
+      const output = first.output ?? first.message ?? first.text ?? first.crawlerMessage;
       if (typeof output === "string" && output.trim()) {
         return output.trim();
       }
@@ -53,7 +53,7 @@ function extractCrawlOutput(responseData) {
   }
 
   if (responseData && typeof responseData === "object") {
-    const output = responseData.output ?? responseData.message ?? responseData.text;
+    const output = responseData.output ?? responseData.message ?? responseData.text ?? responseData.crawlerMessage;
     if (typeof output === "string" && output.trim()) {
       return output.trim();
     }
@@ -65,32 +65,29 @@ function extractCrawlOutput(responseData) {
   return null;
 }
 
-async function runCrawler({ scanId, targetUrl, crawlMode, credentials }) {
+async function triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credentials }) {
   const webhookUrl = getCrawlerWebhookUrl();
   if (!webhookUrl) {
     throw new Error("CRAWLER_WEBHOOK_URL is not configured");
   }
 
+  const backendUrl = process.env.BACKEND_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 5001}`;
+  const callbackUrl = `${backendUrl.replace(/\/$/, "")}/api/crawl/output`;
   const prompt = buildCrawlerPrompt({ targetUrl, crawlMode, credentials });
+
   console.log("[crawler] Triggering workflow:", webhookUrl);
 
   try {
-    const response = await axios.post(
+    await axios.post(
       webhookUrl,
-      { scanId, prompt, targetUrl, crawlMode, responseFormat: "text" },
+      { scanId, prompt, targetUrl, crawlMode, callbackUrl },
       {
         headers: { "Content-Type": "application/json" },
         timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,
       }
     );
 
-    const crawlOutput = extractCrawlOutput(response.data);
-    if (!crawlOutput) {
-      throw new Error("Crawler workflow did not return crawl output");
-    }
-
-    console.log("[crawler] Crawl completed successfully");
-    return crawlOutput;
+    console.log("[crawler] Crawler workflow triggered successfully");
   } catch (err) {
     const message = err.response?.data?.message || err.message || "Crawler workflow failed";
     console.error("[crawler] Failed:", message);
@@ -101,5 +98,5 @@ async function runCrawler({ scanId, targetUrl, crawlMode, credentials }) {
 module.exports = {
   buildCrawlerPrompt,
   extractCrawlOutput,
-  runCrawler,
+  triggerCrawlerWorkflow,
 };
