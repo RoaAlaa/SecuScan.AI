@@ -90,7 +90,7 @@ async function orchestrateScan({
       data: { status: "running" },
     });
 
-    const crawlOutput = await triggerCrawlerWorkflow({ targetUrl, crawlMode, credentials });
+    const crawlOutput = await triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credentials });
     await continueAfterCrawl({ scanId, crawlOutput });
   } catch (err) {
     console.error(`[orchestrator] Scan ${scanId} failed:`, err.message);

@@ -44,12 +44,15 @@ router.post("/output", async (req, res) => {
     }
 
     if (!scan) {
-      return res.status(404).json({ error: "Scan not found" });
+      const hint = !scanId && !token
+        ? "Provide scanId in the body or token in the query/body"
+        : "No scan matches that scanId or token";
+      return res.status(404).json({ error: "Scan not found", hint });
     }
 
-    const normalizedOutput = normalizeCrawlOutput(crawlOutput);
+    const normalizedOutput = normalizeCrawlOutput(crawlOutput ?? req.body.output ?? req.body);
     if (!normalizedOutput) {
-      return res.status(400).json({ error: "crawlOutput is required and must contain text or pages" });
+      return res.status(400).json({ error: "output text is required (use body.output or body.crawlOutput)" });
     }
 
     await continueAfterCrawl({ scanId: scan.id, crawlOutput: normalizedOutput });
