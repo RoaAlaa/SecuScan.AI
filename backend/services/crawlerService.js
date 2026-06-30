@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { getCrawlerWebhookUrl } = require("../config/workflowConfig");
+const { parseRequestTimeout } = require("../utils/httpUtils");
 
 function formatCredential(label, cred) {
   const username = cred?.username?.trim() || "";
@@ -91,7 +92,7 @@ async function triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credential
       { scanId, prompt, targetUrl, crawlMode },
       {
         headers: { "Content-Type": "application/json" },
-        timeout: Number(process.env.CRAWLER_TIMEOUT_MS) || 300000,
+        timeout: parseRequestTimeout(process.env.CRAWLER_TIMEOUT_MS),
       }
     );
 

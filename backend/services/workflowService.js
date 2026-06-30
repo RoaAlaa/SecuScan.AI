@@ -3,6 +3,7 @@ const {
   getVulnerabilityWebhookUrl,
   getScannerForVulnerability,
 } = require("../config/workflowConfig");
+const { parseRequestTimeout } = require("../utils/httpUtils");
 
 function extractWorkflowPayload(responseData) {
   if (!responseData) return null;
@@ -39,7 +40,7 @@ async function triggerVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
   try {
     const response = await axios.post(webhookUrl, payload, {
       headers: { "Content-Type": "application/json" },
-      timeout: Number(process.env.WORKFLOW_TIMEOUT_MS) || 600000,
+      timeout: parseRequestTimeout(process.env.WORKFLOW_TIMEOUT_MS),
     });
 
     console.log(`[workflow] ${scanner || vulnerabilityKey} triggered successfully`);
