@@ -90,7 +90,12 @@ async function orchestrateScan({
       data: { status: "running" },
     });
 
-    await triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credentials });
+    const scan = await prisma.scan.findUnique({
+      where: { id: scanId },
+      select: { callbackToken: true },
+    });
+
+    await triggerCrawlerWorkflow({ callbackToken: scan?.callbackToken, targetUrl, crawlMode, credentials });
   } catch (err) {
     console.error(`[orchestrator] Scan ${scanId} failed:`, err.message);
     await prisma.scan.update({

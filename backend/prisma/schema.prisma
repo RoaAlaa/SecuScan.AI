@@ -23,6 +23,7 @@ model Scan {
   targetUrl               String
   status                  String   @default("pending")
   reportUrl               String?
+  callbackToken           String?  @unique
   crawlMode               Int?
   crawlOutput             String?  @db.Text
   selectedVulnerabilities Json?

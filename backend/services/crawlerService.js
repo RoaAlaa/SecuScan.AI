@@ -65,14 +65,16 @@ function extractCrawlOutput(responseData) {
   return null;
 }
 
-async function triggerCrawlerWorkflow({ scanId, targetUrl, crawlMode, credentials }) {
+async function triggerCrawlerWorkflow({ callbackToken, targetUrl, crawlMode, credentials }) {
   const webhookUrl = getCrawlerWebhookUrl();
   if (!webhookUrl) {
     throw new Error("CRAWLER_WEBHOOK_URL is not configured");
   }
 
   const backendUrl = process.env.BACKEND_URL || process.env.API_URL || `http://localhost:${process.env.PORT || 5001}`;
-  const callbackUrl = `${backendUrl.replace(/\/$/, "")}/api/crawl/output?scanId=${encodeURIComponent(scanId)}`;
+  const callbackUrl = callbackToken
+    ? `${backendUrl.replace(/\/$/, "")}/api/crawl/output?token=${encodeURIComponent(callbackToken)}`
+    : `${backendUrl.replace(/\/$/, "")}/api/crawl/output`;
   const prompt = buildCrawlerPrompt({ targetUrl, crawlMode, credentials });
 
   console.log("[crawler] Triggering workflow:", webhookUrl);

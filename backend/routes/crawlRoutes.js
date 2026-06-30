@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const { handleCrawlerCallback } = require("../services/scanOrchestrator");
+const { findScanByCallbackToken } = require("../services/scanService");
 
 function normalizeCrawlOutput(input) {
   if (typeof input === "string" && input.trim()) {
@@ -31,11 +32,16 @@ function normalizeCrawlOutput(input) {
 
 router.post("/output", async (req, res) => {
   try {
-    const scanId = req.body.scanId || req.query.scanId;
+    const token = req.query.token || req.body.token;
     const { crawlOutput } = req.body;
 
-    if (!scanId) {
-      return res.status(400).json({ error: "scanId is required" });
+    if (!token) {
+      return res.status(400).json({ error: "callback token is required" });
+    }
+
+    const scan = await findScanByCallbackToken(token);
+    if (!scan) {
+      return res.status(404).json({ error: "Scan not found" });
     }
 
     const normalizedOutput = normalizeCrawlOutput(crawlOutput);
@@ -43,7 +49,7 @@ router.post("/output", async (req, res) => {
       return res.status(400).json({ error: "crawlOutput is required and must contain text or pages" });
     }
 
-    await handleCrawlerCallback({ scanId, crawlOutput: normalizedOutput });
+    await handleCrawlerCallback({ scanId: scan.id, crawlOutput: normalizedOutput });
 
     res.status(200).json({ message: "Crawler output received" });
   } catch (err) {

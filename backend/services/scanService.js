@@ -6,10 +6,12 @@ function generateToken() {
 }
 
 async function createScan({ targetUrl, userId, email, crawlMode, selectedVulnerabilities }) {
+  const callbackToken = generateToken();
   const scan = await prisma.scan.create({
     data: {
       targetUrl,
       status: "pending",
+      callbackToken,
       user: userId ? { connect: { id: userId } } : undefined,
       crawlMode: crawlMode ?? undefined,
       selectedVulnerabilities: selectedVulnerabilities ?? [],
@@ -61,6 +63,14 @@ async function listPendingScans(userId) {
 
 const { deleteChunksByScan } = require("./vectorUtils");
 
+async function findScanByCallbackToken(token) {
+  if (!token) return null;
+
+  return prisma.scan.findUnique({
+    where: { callbackToken: token },
+  });
+}
+
 async function deleteScan(scanId, userId) {
   const scan = await prisma.scan.findUnique({
     where: { id: scanId },
@@ -86,5 +96,6 @@ module.exports = {
   createScan,
   listUserScans,
   listPendingScans,
+  findScanByCallbackToken,
   deleteScan,
 };
