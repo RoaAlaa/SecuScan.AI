@@ -71,8 +71,10 @@ async function executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
         findings: inlinePayload.findings || [],
         totalFound: inlinePayload.total_found,
       });
-      await checkAndCompleteScan(scanId);
     }
+    
+    // Always check scan completion, even without inline payload
+    await checkAndCompleteScan(scanId);
   } catch (err) {
     await markWorkflowFailed(scanId, vulnerabilityKey, err.message);
   }
