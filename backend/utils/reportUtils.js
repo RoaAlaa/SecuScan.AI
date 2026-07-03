@@ -85,7 +85,7 @@ function sortReports(reports) {
 }
 
 function formatVulnerabilityLabel(name) {
-  if (name == null || String(name).trim() === "") return "Vulnerability";
+  if (name == null || String(name).trim() === "") return "Finding";
   let label = String(name).trim();
   if (!/ssti/i.test(label)) return label;
 
@@ -97,71 +97,54 @@ function formatVulnerabilityLabel(name) {
     .replace(/\s*[-–—|:]\s*$/g, "")
     .trim();
 
-  return label || "Vulnerability";
+  return label || "Finding";
 }
 
 function normalizeReportItem(item) {
-  if (!item || typeof item !== "object") return item;
+  if (item == null) return item;
+  if (typeof item === "string") {
+    return {
+      vulnerability: "Finding",
+      type: "Finding",
+      summary: item,
+      description: item,
+    };
+  }
+  if (typeof item !== "object") return item;
 
-  const rawName = item.vulnerability || item.type;
+  const rawName = item.vulnerability || item.type || item.name || item.title;
   const displayName = formatVulnerabilityLabel(rawName);
 
   const loc = item.location || {};
-  const attackScenario = item["Attack Scenario"] ?? item.attack_scenario ?? item.steps_to_reproduce ?? item.stepsToReproduce;
+  const attackScenario =
+    item["Attack Scenario"] ?? item.attack_scenario ?? item.steps_to_reproduce ?? item.stepsToReproduce;
   const rootCause = item["Root Cause Analysis"] ?? item.root_cause_analysis;
   const te = item.technical_evidence || {};
 
   return {
+    ...item,
     type: displayName,
     vulnerability: displayName,
-    severity: (item.severity || "").toUpperCase() || undefined,
+    severity: item.severity ? String(item.severity).toUpperCase() : item.severity,
     summary: item.summary ?? item.description,
     description: item.description ?? item.summary,
-    attack_scenario: typeof attackScenario === "string" ? attackScenario : undefined,
-    steps_to_reproduce: item.steps_to_reproduce ?? item.stepsToReproduce ?? (typeof attackScenario === "string" ? attackScenario : undefined),
-    root_cause_analysis: typeof rootCause === "string" ? rootCause : undefined,
+    attack_scenario: typeof attackScenario === "string" ? attackScenario : item.attack_scenario,
+    steps_to_reproduce:
+      item.steps_to_reproduce ?? item.stepsToReproduce ?? (typeof attackScenario === "string" ? attackScenario : undefined),
+    root_cause_analysis: typeof rootCause === "string" ? rootCause : item.root_cause_analysis,
     url: loc.url ?? item.url,
     method: loc.method ?? item.method,
     parameter: loc.parameter ?? item.parameter,
-    payload: item.payload,
-    evidence: item.evidence,
-    impact: item.impact,
-    recommendation: item.recommendation,
-    sessionUsed: item.sessionUsed,
-    dbmsDetected: item.dbmsDetected,
-    sqlmapOutput: item.sqlmapOutput,
-    indicator: item.indicator,
-    detectedTemplateEngine: item.detectedTemplateEngine,
-    exploitationCapability: item.exploitationCapability,
-    baselineResponse: item.baselineResponse,
-    probeResponse: item.probeResponse,
-    ssrfmapOutput: item.ssrfmapOutput,
-    bacClass: item.bacClass,
-    unauthorizedResponse: item.unauthorizedResponse,
     business_impact: Array.isArray(item.business_impact)
       ? item.business_impact
-      : Array.isArray(item.impact)
-        ? item.impact
-        : typeof item.impact === "string"
-          ? [item.impact]
-          : undefined,
-    remediation: Array.isArray(item.remediation)
-      ? item.remediation
-      : typeof item.recommendation === "string"
-        ? [item.recommendation]
-        : undefined,
-    technical_evidence: item.technical_evidence,
+      : item.business_impact,
+    remediation: Array.isArray(item.remediation) ? item.remediation : item.remediation,
+    technical_evidence: item.technical_evidence ?? te,
     dbms: te.dbms ?? item.dbms ?? item.dbmsDetected,
-    injection_techniques: Array.isArray(te.injection_techniques)
-      ? te.injection_techniques
-      : Array.isArray(item.injection_techniques)
-        ? item.injection_techniques
-        : undefined,
-    successful_payloads: Array.isArray(te.successful_payloads)
-      ? te.successful_payloads
-      : Array.isArray(item.successful_payloads)
-        ? item.successful_payloads
-        : undefined,
+    injection_techniques:
+      te.injection_techniques ?? item.injection_techniques,
+    successful_payloads:
+      te.successful_payloads ?? item.successful_payloads,
   };
 }
 

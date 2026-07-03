@@ -86,7 +86,7 @@ export function getSeverityBadgeClass(severity) {
 
 /** Strip redundant "Remote Code Execution" suffix from SSTI titles in the UI. */
 export function formatVulnerabilityLabel(name) {
-  if (name == null || String(name).trim() === "") return "Vulnerability";
+  if (name == null || String(name).trim() === "") return "Finding";
   let label = String(name).trim();
   if (!/ssti/i.test(label)) return label;
 
@@ -98,28 +98,125 @@ export function formatVulnerabilityLabel(name) {
     .replace(/\s*[-–—|:]\s*$/g, "")
     .trim();
 
-  return label || "Vulnerability";
+  return label || "Finding";
+}
+
+const FINDING_HEADER_KEYS = new Set([
+  "vulnerability",
+  "type",
+  "name",
+  "title",
+  "severity",
+  "id",
+]);
+
+const FINDING_FIELD_ORDER = [
+  "summary",
+  "description",
+  "url",
+  "method",
+  "parameter",
+  "location",
+  "payload",
+  "evidence",
+  "attack_scenario",
+  "Attack Scenario",
+  "steps_to_reproduce",
+  "stepsToReproduce",
+  "root_cause_analysis",
+  "Root Cause Analysis",
+  "impact",
+  "business_impact",
+  "recommendation",
+  "remediation",
+  "technical_evidence",
+  "sessionUsed",
+  "bacClass",
+  "unauthorizedResponse",
+  "dbms",
+  "dbmsDetected",
+  "indicator",
+  "detectedTemplateEngine",
+  "exploitationCapability",
+  "baselineResponse",
+  "probeResponse",
+  "sqlmapOutput",
+  "ssrfmapOutput",
+  "injection_techniques",
+  "successful_payloads",
+];
+
+export function formatFindingFieldLabel(key) {
+  if (!key || typeof key !== "string") return "Field";
+  return key
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function isEmptyFindingValue(value) {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function shouldSkipFindingField(key, item) {
+  if (FINDING_HEADER_KEYS.has(key)) return true;
+  if (key === "description" && item.summary && item.summary === item.description) return true;
+  if (key === "summary" && item.description && item.summary === item.description && item.summary) {
+    return false;
+  }
+  return false;
+}
+
+export function getFindingDisplayFields(item) {
+  if (!item || typeof item !== "object") {
+    return [{ key: "details", label: "Details", value: item }];
+  }
+
+  const keys = Object.keys(item).filter((key) => !shouldSkipFindingField(key, item));
+  const ordered = [
+    ...FINDING_FIELD_ORDER.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !FINDING_FIELD_ORDER.includes(key)).sort(),
+  ];
+
+  return ordered
+    .map((key) => ({
+      key,
+      label: formatFindingFieldLabel(key),
+      value: item[key],
+    }))
+    .filter((entry) => !isEmptyFindingValue(entry.value));
 }
 
 export function normalizeReportItem(item) {
-  if (!item || typeof item !== "object") return item;
+  if (item == null) return item;
+  if (typeof item === "string") {
+    return {
+      vulnerability: "Finding",
+      type: "Finding",
+      summary: item,
+      description: item,
+    };
+  }
+  if (typeof item !== "object") return item;
 
-  const rawName = item.vulnerability || item.type;
+  const rawName = item.vulnerability || item.type || item.name || item.title;
   const displayName = formatVulnerabilityLabel(rawName);
 
   return {
     ...item,
     type: displayName,
     vulnerability: displayName,
-    severity: (item.severity || "").toUpperCase() || undefined,
+    severity: item.severity ? String(item.severity).toUpperCase() : item.severity,
     summary: item.summary ?? item.description,
     description: item.description ?? item.summary,
-    attack_scenario: item.attack_scenario ?? item.steps_to_reproduce ?? item.stepsToReproduce,
-    steps_to_reproduce: item.steps_to_reproduce ?? item.stepsToReproduce ?? item.attack_scenario,
-    payload: item.payload,
-    evidence: item.evidence,
-    impact: item.impact,
-    recommendation: item.recommendation,
+    attack_scenario:
+      item.attack_scenario ?? item["Attack Scenario"] ?? item.steps_to_reproduce ?? item.stepsToReproduce,
+    steps_to_reproduce:
+      item.steps_to_reproduce ?? item.stepsToReproduce ?? item.attack_scenario ?? item["Attack Scenario"],
     url: item.url ?? item.location?.url,
     method: item.method ?? item.location?.method,
     parameter: item.parameter ?? item.location?.parameter,
@@ -150,7 +247,7 @@ export function getUniqueVulnerabilityTypes(reports) {
   const names = new Set();
   for (const item of reports) {
     const label = getVulnerabilityLabel(item);
-    if (label && label !== "Vulnerability") names.add(label);
+    if (label && label !== "Finding" && label !== "Vulnerability") names.add(label);
   }
   return [...names].sort((a, b) => a.localeCompare(b));
 }
