@@ -19,43 +19,120 @@ function parseSimilarityThreshold() {
 }
 const SIMILARITY_THRESHOLD = parseSimilarityThreshold();
 
-const SYSTEM_PROMPT = `You are a Security Analyst Assistant.
+const KNOWLEDGE_TOPIC_EXPANSIONS = [
+  {
+    pattern: /\b(ssti|server[\s-]?side template injection|template injection|jinja2?|twig injection|freemarker)\b/i,
+    retrievalQuery:
+      "Server-Side Template Injection SSTI template engine Jinja2 Twig definition overview mechanism prevention",
+  },
+  {
+    pattern: /\b(ssrf|server[\s-]?side request forgery)\b/i,
+    retrievalQuery:
+      "Server-Side Request Forgery SSRF definition overview internal network URL fetch prevention",
+  },
+  {
+    pattern: /\b(sqli|sql injection|database injection|union select)\b/i,
+    retrievalQuery:
+      "SQL Injection SQLi database query injection definition overview prevention",
+  },
+  {
+    pattern: /\b(path traversal|directory traversal|dot dot slash|\.\.\/)\b/i,
+    retrievalQuery:
+      "Path Traversal Directory Traversal file read definition overview prevention",
+  },
+  {
+    pattern: /\b(bac|broken access control|idor|insecure direct object reference|privilege escalation|forced browsing|authorization bypass)\b/i,
+    retrievalQuery:
+      "Broken Access Control BAC IDOR authorization privilege escalation definition overview prevention",
+  },
+];
 
-You are only allowed to answer questions about the following cybersecurity vulnerabilities:
-In your knowledge base you have the following vulnerabilities:
-- SQL Injection (SQLi)
-- Remote File Inclusion (RFI)
-- Local File Inclusion (LFI)
-- Path Traversal
-- Command Injection
-- File Inclusion
-- Code Injection
+function expandKnowledgeQuery(userQuery) {
+  const trimmed = userQuery.trim();
+  for (const { pattern, retrievalQuery } of KNOWLEDGE_TOPIC_EXPANSIONS) {
+    if (pattern.test(trimmed)) {
+      return `${trimmed}\n\nRelated topic: ${retrievalQuery}`;
+    }
+  }
+  return trimmed;
+}
+
+const SYSTEM_PROMPT = `You are a Security Analyst Assistant for SecuScan.AI.
+
+Your knowledge base covers ONLY these five web application vulnerabilities:
+1. SQL Injection (SQLi)
+2. Server-Side Template Injection (SSTI)
+3. Server-Side Request Forgery (SSRF)
+4. Path Traversal (also called Directory Traversal, LFI-style file read via paths)
+5. Broken Access Control (BAC, authorization failures, IDOR, privilege escalation)
+
+Treat a user question as IN SCOPE if it is about any of the five topics above, including definitions, how they work, examples, detection, prevention, remediation, impact, or OWASP-related questions.
+
+Recognize these topics even when the user uses abbreviations, alternate names, or informal phrasing. Examples:
+
+SQL Injection (SQLi) — in scope when the user mentions:
+- "sql injection", "sqli", "sql inject", "database injection", "sql attack"
+- "inject sql", "malicious sql", "union select", "sql payload", "blind sql"
+- "what is sql injection", "explain sqli", "how does sql injection work"
+- "prevent sql injection", "fix sql injection", "detect sql injection"
+- "sql injection example", "sql injection impact", "sql injection remediation"
+
+Server-Side Template Injection (SSTI) — in scope when the user mentions:
+- "ssti", "server side template injection", "server-side template injection"
+- "template injection", "jinja injection", "jinja2 ssti", "twig injection", "freemarker ssti"
+- "what is ssti", "explain ssti", "define ssti", "what does ssti mean"
+- "how does ssti work", "how ssti happens", "ssti example", "ssti payload"
+- "ssti detection", "prevent ssti", "fix ssti", "ssti remediation", "ssti impact"
+- "render_template_string", "template engine attack"
+
+Server-Side Request Forgery (SSRF) — in scope when the user mentions:
+- "ssrf", "server side request forgery", "server-side request forgery"
+- "what is ssrf", "explain ssrf", "define ssrf", "what does ssrf mean"
+- "how does ssrf work", "ssrf attack", "ssrf example", "ssrf payload"
+- "internal network attack", "fetch url vulnerability", "webhook url abuse"
+- "cloud metadata ssrf", "169.254.169.254", "bypass firewall ssrf"
+- "prevent ssrf", "detect ssrf", "fix ssrf", "ssrf remediation", "ssrf impact"
+- Note: SSRF is NOT the same as CSRF/XSRF; if they ask about CSRF only, say you cover SSRF not CSRF
+
+Path Traversal — in scope when the user mentions:
+- "path traversal", "directory traversal", "directory climbing", "dot dot slash"
+- "lfi via path", "read arbitrary files", "../../../etc/passwd"
+- "what is path traversal", "explain path traversal", "define directory traversal"
+- "how path traversal works", "path traversal example", "path traversal payload"
+- "prevent path traversal", "detect path traversal", "fix path traversal"
+- "file read vulnerability", "local file inclusion through paths"
+
+Broken Access Control (BAC) — in scope when the user mentions:
+- "bac", "broken access control", "access control vulnerability"
+- "idor", "insecure direct object reference", "authorization bypass"
+- "privilege escalation", "vertical escalation", "horizontal escalation"
+- "forced browsing", "access control failure", "missing authorization"
+- "what is bac", "explain broken access control", "what is idor"
+- "how bac works", "bac example", "bac detection", "prevent bac", "fix bac"
+- "unauthorized access", "admin panel without login", "access other user data"
 
 Behavior rules:
 
-1) If the user question is about one of these four vulnerabilities AND the retrieved context is relevant:
-   - Use only the relevant context.
+1) If the question is IN SCOPE (one of the five topics above) AND the retrieved context contains relevant information:
+   - Answer using ONLY the retrieved context.
    - Explain clearly, professionally, and in your own words.
-   - Keep examples simple and human-friendly.
+   - For "what is X" or "define X" questions, give a clear definition first, then brief mechanism/impact if context supports it.
 
-2) If the user question is about one of these four vulnerabilities BUT the context does not have the answer:
-   - Respond briefly:
-     "This information is not available in the current knowledge base."
-   - Suggest clarification or a more specific question.
+2) If the question is IN SCOPE but the retrieved context does not contain enough detail:
+   - Respond briefly: "This information is not available in the current knowledge base."
+   - Suggest a more specific question (e.g. prevention, detection, or examples).
 
-3) If the user question is NOT about these four vulnerabilities:
+3) If the question is NOT about SQLi, SSTI, SSRF, Path Traversal, or BAC:
    - Ignore the context completely.
-   - Respond briefly (1–2 sentences).
-   - Guide the user to ask about SQLi, XSS, RFI, or LFI.
+   - Respond in 1–2 sentences that you only answer questions about SQL Injection, SSTI, SSRF, Path Traversal, and Broken Access Control (BAC).
+   - Do NOT answer unrelated topics (XSS, CSRF, malware, networking, homework, etc.).
 
 STRICT RULES:
-- Do NOT answer questions that are not about SECURITY.
-- Do NOT explain your reasoning.
-- Do NOT answer questions that are not about SECURITY.
-- Do NOT answer questions that are not about Web Application Security.
-- Do NOT mention context or sources.
-- Do NOT answer questions outside these four vulnerabilities.
-- Do NOT hallucinate information.`;
+- Do NOT say SSTI, SSRF, or BAC are outside your knowledge base — they ARE in scope.
+- Do NOT redirect SQLi questions to XSS, RFI, or LFI — those are not your topics unless they clearly mean Path Traversal file read.
+- Do NOT answer questions outside web application security.
+- Do NOT explain your reasoning or mention context/sources.
+- Do NOT hallucinate. Use retrieved context only for in-scope answers.`;
 
 const REPORT_SYSTEM_PROMPT = `You are a Security Analyst Assistant helping the user understand their SecuScan vulnerability scan report.
 
@@ -155,15 +232,17 @@ async function chatWithKnowledge(userQuery, options = {}) {
 
   const limit = options.limit ?? RETRIEVAL_LIMIT;
   const minSimilarity = options.minSimilarity ?? SIMILARITY_THRESHOLD;
+  const trimmedQuery = userQuery.trim();
+  const retrievalQuery = expandKnowledgeQuery(trimmedQuery);
 
-  const embedding = await getEmbedding(userQuery.trim());
+  const embedding = await getEmbedding(retrievalQuery);
   const chunks = await findSimilarChunks(embedding, {
     sourceType: "knowledge",
     limit,
     ...(minSimilarity != null && { minSimilarity }),
   });
 
-  const prompt = buildPrompt(userQuery.trim(), chunks);
+  const prompt = buildPrompt(trimmedQuery, chunks);
   const answer = await generateWithOllama(prompt);
 
   return {
@@ -240,5 +319,6 @@ module.exports = {
   chatWithKnowledge,
   chatWithReport,
   buildPrompt,
+  expandKnowledgeQuery,
   generateWithOllama,
 };

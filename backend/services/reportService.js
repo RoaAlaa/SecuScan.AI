@@ -28,6 +28,33 @@ function isCrawlerReport(report) {
   return report.type === "crawler";
 }
 
+async function syncWorkflowRunsFromReports(scanId) {
+  const scan = await prisma.scan.findUnique({
+    where: { id: scanId },
+    include: { workflowRuns: true, reports: true },
+  });
+
+  if (!scan) return;
+
+  const vulnerabilityReports = scan.reports.filter((r) => !isCrawlerReport(r));
+
+  for (const run of scan.workflowRuns) {
+    if (run.status === "completed" || run.status === "failed") continue;
+
+    const hasMatchingReport = vulnerabilityReports.some((report) => {
+      const reportKey = resolveVulnerabilityKey(report.type);
+      return report.type === run.vulnerability || reportKey === run.vulnerability;
+    });
+
+    if (hasMatchingReport) {
+      await prisma.workflowRun.updateMany({
+        where: { scanId, vulnerability: run.vulnerability },
+        data: { status: "completed", finishedAt: new Date(), errorMessage: null },
+      });
+    }
+  }
+}
+
 function extractFindingsFromReport(report) {
   if (!report?.details || typeof report.details !== "object") return [];
 
@@ -61,8 +88,14 @@ async function saveWorkflowReport({
   totalFound,
   errorMessage,
 }) {
-  const resolvedKey = resolveVulnerabilityKey(vulnerabilityKey) || resolveVulnerabilityKey(scanner);
+  let resolvedKey =
+    resolveVulnerabilityKey(vulnerabilityKey) || resolveVulnerabilityKey(scanner);
+
   const reportType = resolvedKey || (typeof scanner === "string" ? scanner.toLowerCase() : "scan");
+  if (!resolvedKey) {
+    resolvedKey = resolveVulnerabilityKey(reportType);
+  }
+
   const normalizedFindings = Array.isArray(findings) ? findings : [];
   const severity = getHighestSeverity(normalizedFindings) || (status === "FAILED" ? "unknown" : "info");
 
@@ -91,12 +124,19 @@ async function saveWorkflowReport({
         errorMessage: errorMessage || null,
       },
     });
+  } else {
+    console.warn(
+      `[report] Could not map scanner "${scanner}" to a workflow run for scan ${scanId}. ` +
+        "Use scanner values like BAC, SQLI, SSTI, SSRF, or PATH_TRAVERSAL."
+    );
   }
 
   return report;
 }
 
 async function checkAndCompleteScan(scanId) {
+  await syncWorkflowRunsFromReports(scanId);
+
   const scan = await prisma.scan.findUnique({
     where: { id: scanId },
     include: { workflowRuns: true, reports: true },
@@ -113,6 +153,10 @@ async function checkAndCompleteScan(scanId) {
 
   const allFinished = runs.every((run) => run.status === "completed" || run.status === "failed");
   if (!allFinished) {
+    const pending = runs
+      .filter((run) => run.status !== "completed" && run.status !== "failed")
+      .map((run) => `${run.vulnerability}:${run.status}`);
+    console.warn(`[scan] Scan ${scanId} still waiting on workflows: ${pending.join(", ")}`);
     return false;
   }
 
@@ -131,23 +175,31 @@ async function checkAndCompleteScan(scanId) {
 
     try {
       const merged = await buildMergedReportPayload(scanId);
-      const vulnerabilityReports = scan.reports.filter((r) => !isCrawlerReport(r));
+      const reports = await prisma.report.findMany({
+        where: { scanId },
+        orderBy: { createdAt: "asc" },
+      });
+      const vulnerabilityReports = reports.filter((r) => !isCrawlerReport(r));
       const latestReport = vulnerabilityReports[vulnerabilityReports.length - 1];
 
-      if (latestReport && merged.vulnerabilities?.length > 0) {
-        await ingestReportForScan({
+      if (latestReport) {
+        const chunkCount = await ingestReportForScan({
           scanId,
           reportId: latestReport.id,
           type: "scan",
           severity: merged.severity,
           details: merged,
         });
+        console.log(`[scan] Scan ${scanId} completed; RAG ingested ${chunkCount} chunk(s)`);
+      } else {
+        console.warn(`[scan] Scan ${scanId} completed but no vulnerability report found for RAG ingestion`);
       }
     } catch (ingestErr) {
       console.error("Report ingestion (RAG) failed on scan completion:", ingestErr.message);
     }
   }
 
+  console.log(`[scan] Scan ${scanId} marked ${finalStatus}`);
   return true;
 }
 

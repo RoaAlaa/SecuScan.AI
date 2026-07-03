@@ -1,6 +1,6 @@
 const prisma = require("../prismaClient");
 const { triggerCrawlerWorkflow } = require("./crawlerService");
-const { getAllVulnerabilityKeys } = require("../config/workflowConfig");
+const { getAllVulnerabilityKeys, getScannerForVulnerability } = require("../config/workflowConfig");
 const { triggerVulnerabilityWorkflow } = require("./workflowService");
 const {
   saveCrawlerReport,
@@ -52,6 +52,17 @@ async function markWorkflowFailed(scanId, vulnerabilityKey, errorMessage) {
   await checkAndCompleteScan(scanId);
 }
 
+async function markWorkflowCompleted(scanId, vulnerabilityKey, status = "completed") {
+  await prisma.workflowRun.updateMany({
+    where: { scanId, vulnerability: vulnerabilityKey },
+    data: {
+      status: status === "failed" ? "failed" : "completed",
+      finishedAt: new Date(),
+      errorMessage: null,
+    },
+  });
+}
+
 async function executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerabilityKey }) {
   await markWorkflowRunning(scanId, vulnerabilityKey);
 
@@ -66,15 +77,40 @@ async function executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
       await saveWorkflowReport({
         scanId,
         vulnerabilityKey,
-        scanner: inlinePayload.scanner,
+        scanner: inlinePayload.scanner || getScannerForVulnerability(vulnerabilityKey),
         status: inlinePayload.status || "COMPLETE",
         findings: inlinePayload.findings || [],
         totalFound: inlinePayload.total_found,
       });
+    } else {
+      const existingReport = await prisma.report.findFirst({
+        where: { scanId, type: vulnerabilityKey },
+      });
+
+      if (existingReport) {
+        console.log(
+          `[workflow] ${vulnerabilityKey} returned no inline payload; using report from /api/report callback`
+        );
+        await markWorkflowCompleted(scanId, vulnerabilityKey);
+      } else {
+        console.warn(
+          `[workflow] ${vulnerabilityKey} returned no inline payload; saving empty report`
+        );
+        await saveWorkflowReport({
+          scanId,
+          vulnerabilityKey,
+          scanner: getScannerForVulnerability(vulnerabilityKey) || vulnerabilityKey,
+          status: "COMPLETE",
+          findings: [],
+          totalFound: 0,
+        });
+      }
     }
-    
-    // Always check scan completion, even without inline payload
-    await checkAndCompleteScan(scanId);
+
+    const completed = await checkAndCompleteScan(scanId);
+    if (!completed) {
+      console.warn(`[workflow] Scan ${scanId} not marked completed yet (waiting on other workflows)`);
+    }
   } catch (err) {
     await markWorkflowFailed(scanId, vulnerabilityKey, err.message);
   }

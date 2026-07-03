@@ -62,13 +62,46 @@ function getVulnerabilityWebhookMap() {
   return map;
 }
 
+const LABEL_ALIASES = {
+  sql_injection: "sqli",
+  sqlinject: "sqli",
+  sqlmap: "sqli",
+  server_side_template_injection: "ssti",
+  template_injection: "ssti",
+  sstimap: "ssti",
+  server_side_request_forgery: "ssrf",
+  ssrfmap: "ssrf",
+  broken_access_control: "bac",
+  access_control: "bac",
+  idor: "bac",
+  path_traversal: "path_traversal",
+  directory_traversal: "path_traversal",
+  pathtraversal: "path_traversal",
+  lfi: "path_traversal",
+  local_file_inclusion: "path_traversal",
+};
+
 function resolveVulnerabilityKey(input) {
   if (!input || typeof input !== "string") return null;
-  const normalized = input.trim().toLowerCase().replace(/-/g, "_");
+
+  const trimmed = input.trim();
+  const normalized = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+
   if (VULNERABILITY_DEFINITIONS[normalized]) return normalized;
   if (LEGACY_SCAN_ALIASES[normalized]) return LEGACY_SCAN_ALIASES[normalized];
-  const fromScanner = SCANNER_TO_VULNERABILITY[input.trim().toUpperCase()];
-  return fromScanner || null;
+  if (LABEL_ALIASES[normalized]) return LABEL_ALIASES[normalized];
+
+  const fromScanner = SCANNER_TO_VULNERABILITY[trimmed.toUpperCase()];
+  if (fromScanner) return fromScanner;
+
+  for (const def of Object.values(VULNERABILITY_DEFINITIONS)) {
+    const labelNorm = def.label.toLowerCase().replace(/[\s-]+/g, "_");
+    if (normalized === labelNorm || normalized.includes(labelNorm) || labelNorm.includes(normalized)) {
+      return def.key;
+    }
+  }
+
+  return null;
 }
 
 function getAllVulnerabilityKeys() {

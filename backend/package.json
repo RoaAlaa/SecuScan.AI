@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "ingest:knowledge": "node --max-old-space-size=4096 scripts/ingestKnowledge.js"
+    "ingest:knowledge": "node --max-old-space-size=4096 scripts/ingestKnowledge.js",
+    "reconcile:scan": "node scripts/reconcileScan.js"
   },
   "keywords": [],
   "author": "",
