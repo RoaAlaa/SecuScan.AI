@@ -7,6 +7,7 @@ const {
   saveWorkflowReport,
   checkAndCompleteScan,
 } = require("./reportService");
+const { enrichWorkflowFindings, isErrorWorkflowStatus } = require("../utils/workflowPayloadUtils");
 
 async function createWorkflowRuns(scanId, vulnerabilityKeys) {
   await prisma.workflowRun.createMany({
@@ -74,13 +75,24 @@ async function executeVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
     });
 
     if (inlinePayload) {
+      const status = inlinePayload.status || "COMPLETE";
+      const findings = enrichWorkflowFindings({
+        findings: inlinePayload.findings || [],
+        status,
+        errorMessage: inlinePayload.errorMessage,
+        vulnerabilityKey,
+        scanner: inlinePayload.scanner || getScannerForVulnerability(vulnerabilityKey),
+      });
+
       await saveWorkflowReport({
         scanId,
         vulnerabilityKey,
         scanner: inlinePayload.scanner || getScannerForVulnerability(vulnerabilityKey),
-        status: inlinePayload.status || "COMPLETE",
-        findings: inlinePayload.findings || [],
-        totalFound: inlinePayload.total_found,
+        status,
+        findings,
+        totalFound: inlinePayload.total_found ?? findings.length,
+        errorMessage: inlinePayload.errorMessage,
+        workflowFailed: isErrorWorkflowStatus(status),
       });
     } else {
       const existingReport = await prisma.report.findFirst({

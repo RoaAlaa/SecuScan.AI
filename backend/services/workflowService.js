@@ -4,23 +4,7 @@ const {
   getScannerForVulnerability,
 } = require("../config/workflowConfig");
 const { parseRequestTimeout } = require("../utils/httpUtils");
-
-function extractWorkflowPayload(responseData) {
-  if (!responseData) return null;
-
-  if (Array.isArray(responseData) && responseData.length > 0) {
-    const first = responseData[0];
-    if (first && typeof first === "object" && Array.isArray(first.findings)) {
-      return first;
-    }
-  }
-
-  if (typeof responseData === "object" && Array.isArray(responseData.findings)) {
-    return responseData;
-  }
-
-  return null;
-}
+const { extractWorkflowPayload } = require("../utils/workflowPayloadUtils");
 
 async function triggerVulnerabilityWorkflow({ scanId, crawlOutput, vulnerabilityKey }) {
   const webhookUrl = getVulnerabilityWebhookUrl(vulnerabilityKey);
@@ -44,7 +28,7 @@ async function triggerVulnerabilityWorkflow({ scanId, crawlOutput, vulnerability
     });
 
     console.log(`[workflow] ${scanner || vulnerabilityKey} triggered successfully`);
-    return extractWorkflowPayload(response.data);
+    return extractWorkflowPayload(response.data, vulnerabilityKey);
   } catch (err) {
     const message = err.response?.data?.message || err.message || "Workflow trigger failed";
     console.error(`[workflow] ${scanner || vulnerabilityKey} failed:`, message);

@@ -63,6 +63,7 @@ function getVulnerabilityWebhookMap() {
 }
 
 const LABEL_ALIASES = {
+  sqlt: "sqli",
   sql_injection: "sqli",
   sqlinject: "sqli",
   sqlmap: "sqli",

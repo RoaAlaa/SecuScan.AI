@@ -103,7 +103,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-1 flex-col h-[calc(100vh-120px)] min-h-0">
+    <div className="flex flex-1 flex-col h-[calc(100vh-120px)] min-h-0 overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-800/50 shrink-0">
         <h1 className="text-lg font-bold text-white flex items-center gap-2">
           <MessageCircle size={22} className="text-blue-400" />
@@ -116,7 +116,7 @@ export default function Chat() {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
         <div className="max-w-2xl mx-auto">
           {messages.length === 0 && !loading && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -209,7 +209,10 @@ export default function Chat() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="px-6 py-4 border-t border-slate-800/50 shrink-0">
+      <form
+        onSubmit={handleSubmit}
+        className="px-6 py-4 border-t border-slate-800/50 bg-slate-950/90 backdrop-blur-sm shrink-0 sticky bottom-0 z-10"
+      >
         <div className="max-w-2xl mx-auto space-y-3">
           {user && (
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">

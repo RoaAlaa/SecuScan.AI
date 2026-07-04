@@ -10,6 +10,7 @@ const {
   getHighestSeverity,
 } = require("../utils/reportUtils");
 const { resolveVulnerabilityKey } = require("../config/workflowConfig");
+const { isErrorWorkflowStatus } = require("../utils/workflowPayloadUtils");
 
 function getSampleReport() {
   try {
@@ -87,6 +88,7 @@ async function saveWorkflowReport({
   findings,
   totalFound,
   errorMessage,
+  workflowFailed,
 }) {
   let resolvedKey =
     resolveVulnerabilityKey(vulnerabilityKey) || resolveVulnerabilityKey(scanner);
@@ -96,8 +98,11 @@ async function saveWorkflowReport({
     resolvedKey = resolveVulnerabilityKey(reportType);
   }
 
+  const normalizedStatus = String(status || "COMPLETE").toUpperCase();
+  const failed = workflowFailed ?? isErrorWorkflowStatus(normalizedStatus);
   const normalizedFindings = Array.isArray(findings) ? findings : [];
-  const severity = getHighestSeverity(normalizedFindings) || (status === "FAILED" ? "unknown" : "info");
+  const severity =
+    getHighestSeverity(normalizedFindings) || (failed ? "unknown" : "info");
 
   const report = await prisma.report.create({
     data: {
@@ -106,10 +111,10 @@ async function saveWorkflowReport({
       severity,
       details: {
         scanner: scanner || reportType.toUpperCase(),
-        status: status || "COMPLETE",
+        status: normalizedStatus,
         total_found: totalFound ?? normalizedFindings.length,
         vulnerabilities: normalizedFindings,
-        scan_status: status === "FAILED" ? "failed" : "completed",
+        scan_status: failed ? "failed" : "completed",
         ...(errorMessage ? { errorMessage } : {}),
       },
     },
@@ -119,7 +124,7 @@ async function saveWorkflowReport({
     await prisma.workflowRun.updateMany({
       where: { scanId, vulnerability: resolvedKey },
       data: {
-        status: status === "FAILED" ? "failed" : "completed",
+        status: failed ? "failed" : "completed",
         finishedAt: new Date(),
         errorMessage: errorMessage || null,
       },
@@ -204,25 +209,55 @@ async function checkAndCompleteScan(scanId) {
 }
 
 async function buildMergedReportPayload(scanId) {
-  const reports = await prisma.report.findMany({
-    where: { scanId },
-    orderBy: { createdAt: "asc" },
-  });
+  const [scan, reports] = await Promise.all([
+    prisma.scan.findUnique({
+      where: { id: scanId },
+      select: { targetUrl: true, finishedAt: true, status: true },
+    }),
+    prisma.report.findMany({
+      where: { scanId },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
 
   const vulnerabilityReports = reports.filter((r) => !isCrawlerReport(r));
   const allFindings = [];
+  const workflowErrors = [];
 
   for (const report of vulnerabilityReports) {
     allFindings.push(...extractFindingsFromReport(report));
+    const details = report.details && typeof report.details === "object" ? report.details : {};
+    if (details.errorMessage) {
+      workflowErrors.push({
+        scanner: details.scanner || report.type,
+        status: details.status || "UNKNOWN",
+        message: details.errorMessage,
+      });
+    }
   }
 
   const vulnerabilities = sortReports(allFindings.map((f) => normalizeReportItem(f)));
   const severity = getHighestSeverity(vulnerabilities) || "unknown";
+  const hasSecurityFindings = vulnerabilities.some(
+    (item) => String(item.severity || "").toUpperCase() !== "INFO"
+  );
+
+  let summary;
+  if (workflowErrors.length > 0 && !hasSecurityFindings) {
+    summary =
+      "No security vulnerabilities were confirmed. Some scanners could not finish — see workflow notices below.";
+  } else if (workflowErrors.length > 0) {
+    summary = "Scan completed with findings. Some scanners also reported workflow issues.";
+  }
 
   return {
     type: "scan",
     severity,
-    scan_status: "completed",
+    scan_status: scan?.status === "failed" ? "failed" : "completed",
+    targetUrl: scan?.targetUrl,
+    finishedAt: scan?.finishedAt,
+    summary,
+    workflow_errors: workflowErrors,
     vulnerabilities,
   };
 }

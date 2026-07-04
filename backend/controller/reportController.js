@@ -8,7 +8,12 @@ const {
   prepareReportsForDisplay,
   isWorkflowReportPayload,
 } = require("../utils/reportUtils");
-const { resolveVulnerabilityKey } = require("../config/workflowConfig");
+const { resolveVulnerabilityKey, getScannerForVulnerability } = require("../config/workflowConfig");
+const {
+  normalizeWorkflowPayload,
+  enrichWorkflowFindings,
+  isErrorWorkflowStatus,
+} = require("../utils/workflowPayloadUtils");
 const prisma = require("../prismaClient");
 
 async function handleLegacyReportSave(body) {
