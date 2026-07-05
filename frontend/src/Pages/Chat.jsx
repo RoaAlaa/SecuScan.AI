@@ -109,7 +109,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-1 flex-col h-[calc(100vh-120px)] min-h-0 overflow-hidden">
+    <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-800/50 shrink-0">
         <h1 className="text-lg font-bold text-white flex items-center gap-2">
           <MessageCircle size={22} className="text-blue-400" />
