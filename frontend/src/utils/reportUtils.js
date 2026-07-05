@@ -121,8 +121,6 @@ const FINDING_FIELD_ORDER = [
   "evidence",
   "attack_scenario",
   "Attack Scenario",
-  "steps_to_reproduce",
-  "stepsToReproduce",
   "root_cause_analysis",
   "Root Cause Analysis",
   "impact",
@@ -164,6 +162,7 @@ function isEmptyFindingValue(value) {
 
 function shouldSkipFindingField(key, item) {
   if (FINDING_HEADER_KEYS.has(key)) return true;
+  if (key === "steps_to_reproduce" || key === "stepsToReproduce") return true;
   if (key === "description" && item.summary && item.summary === item.description) return true;
   if (key === "summary" && item.description && item.summary === item.description && item.summary) {
     return false;
@@ -215,8 +214,6 @@ export function normalizeReportItem(item) {
     description: item.description ?? item.summary,
     attack_scenario:
       item.attack_scenario ?? item["Attack Scenario"] ?? item.steps_to_reproduce ?? item.stepsToReproduce,
-    steps_to_reproduce:
-      item.steps_to_reproduce ?? item.stepsToReproduce ?? item.attack_scenario ?? item["Attack Scenario"],
     url: item.url ?? item.location?.url,
     method: item.method ?? item.location?.method,
     parameter: item.parameter ?? item.location?.parameter,
