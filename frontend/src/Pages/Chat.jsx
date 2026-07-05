@@ -110,7 +110,8 @@ export default function Chat() {
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-800/50 shrink-0">
+      {/* Fixed Header */}
+      <div className="px-6 py-4 border-b border-slate-800/50 shrink-0 bg-slate-950/95 backdrop-blur-sm relative z-20">
         <h1 className="text-lg font-bold text-white flex items-center gap-2">
           <MessageCircle size={22} className="text-blue-400" />
           Secu Assistant
@@ -122,6 +123,7 @@ export default function Chat() {
         </p>
       </div>
 
+      {/* Scrollable Messages Area */}
       <div ref={chatContainerRef} className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
         <div className="max-w-2xl mx-auto">
           {messages.length === 0 && !loading && (
@@ -208,16 +210,17 @@ export default function Chat() {
       </div>
 
       {error && (
-        <div className="px-6 py-2 shrink-0">
+        <div className="shrink-0 px-6 py-2">
           <p className="text-sm text-red-400 bg-red-900/20 border border-red-500/30 rounded-lg px-3 py-2 max-w-2xl mx-auto">
             {error}
           </p>
         </div>
       )}
 
+      {/* Fixed Input Form */}
       <form
         onSubmit={handleSubmit}
-        className="px-6 py-4 border-t border-slate-800/50 bg-slate-950/90 backdrop-blur-sm shrink-0 sticky bottom-0 z-10"
+        className="px-6 py-4 border-t border-slate-800/50 bg-slate-950/95 backdrop-blur-sm shrink-0 relative z-20"
       >
         <div className="max-w-2xl mx-auto space-y-3">
           {user && (
