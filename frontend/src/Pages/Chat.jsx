@@ -25,17 +25,23 @@ export default function Chat() {
   const [scansLoading, setScansLoading] = useState(false);
   const [selectedScanId, setSelectedScanId] = useState("");
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   const selectedScan = scans.find((s) => s.id === selectedScanId) || null;
   const reportMode = Boolean(selectedScanId);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    });
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
   useEffect(() => {
     if (!user) {
@@ -116,7 +122,7 @@ export default function Chat() {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto min-h-0 px-6 py-4">
         <div className="max-w-2xl mx-auto">
           {messages.length === 0 && !loading && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
